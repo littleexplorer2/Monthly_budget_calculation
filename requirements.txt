@@ -1,0 +1,8 @@
+# Web application dependencies for the multi-currency budget calculator.
+# Python 3.10+; exact versions depend on these constraints and the platform.
+fastapi>=0.110
+uvicorn>=0.29
+yfinance>=1.5
+pandas>=2.2
+numpy>=1.26
+requests>=2.31

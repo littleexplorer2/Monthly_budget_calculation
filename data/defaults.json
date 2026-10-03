@@ -1,0 +1,66 @@
+{
+  "variable": {
+    "Shenzhen": {
+      "CNY": 85.0
+    },
+    "Hong_Kong": {
+      "HKD": 160.0
+    },
+    "Chengdu": {
+      "CNY": 30.0
+    }
+  },
+  "fixed": {
+    "Mainland": {
+      "USD": 31.9,
+      "CNY": 119.0,
+      "HKD": 196.0
+    },
+    "Overseas": {
+      "USD": 23.4,
+      "CNY": 119.0,
+      "HKD": 196.0
+    }
+  },
+  "extra": {
+    "CNY": 0.0,
+    "USD": 0.0,
+    "HKD": 0.0
+  },
+  "travel": {
+    "Shanghai": {
+      "CNY": {
+        "daily": 175.0,
+        "once": 200.0
+      }
+    },
+    "Taipei": {
+      "TWD": {
+        "daily": 1450.0,
+        "once": 1000.0
+      }
+    },
+    "Bangkok": {
+      "THB": {
+        "daily": 1100.0,
+        "once": 2000.0
+      }
+    }
+  },
+  "location_names": {
+    "Extra": "额外预算",
+    "Shenzhen": "深圳",
+    "Hong_Kong": "香港",
+    "Chengdu": "成都",
+    "Shanghai": "上海",
+    "Taipei": "台北",
+    "Bangkok": "曼谷"
+  },
+  "currency_names": {
+    "CNY": "人民币",
+    "HKD": "港币",
+    "USD": "美元",
+    "TWD": "新台币",
+    "THB": "泰铢"
+  }
+}

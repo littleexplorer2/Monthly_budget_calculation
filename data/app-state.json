@@ -1,0 +1,1929 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-03T11:23:40Z",
+  "year": 2026,
+  "month": 10,
+  "itineraryByMonth": {
+    "2026-10": {
+      "Shenzhen": [
+        {
+          "start": "2026-10-01",
+          "end": "2026-10-03"
+        },
+        {
+          "start": "2026-10-16",
+          "end": "2026-10-18"
+        }
+      ],
+      "Hong_Kong": [
+        {
+          "start": "2026-10-04",
+          "end": "2026-10-15"
+        },
+        {
+          "start": "2026-10-19",
+          "end": "2026-10-31"
+        }
+      ]
+    },
+    "2026-05": {
+      "Hong_Kong": [
+        {
+          "start": "2026-05-01",
+          "end": "2026-05-05"
+        },
+        {
+          "start": "2026-05-07",
+          "end": "2026-05-08"
+        },
+        {
+          "start": "2026-05-18",
+          "end": "2026-05-21"
+        },
+        {
+          "start": "2026-05-25",
+          "end": "2026-05-31"
+        }
+      ],
+      "Bangkok": [
+        {
+          "start": "2026-05-09",
+          "end": "2026-05-17"
+        }
+      ],
+      "Shenzhen": [
+        {
+          "start": "2026-05-06",
+          "end": "2026-05-06"
+        },
+        {
+          "start": "2026-05-22",
+          "end": "2026-05-24"
+        }
+      ]
+    },
+    "2026-04": {
+      "Hong_Kong": [
+        {
+          "start": "2026-04-07",
+          "end": "2026-04-16"
+        },
+        {
+          "start": "2026-04-20",
+          "end": "2026-04-30"
+        }
+      ],
+      "Shenzhen": [
+        {
+          "start": "2026-04-17",
+          "end": "2026-04-19"
+        }
+      ],
+      "Taipei": [
+        {
+          "start": "2026-04-01",
+          "end": "2026-04-06"
+        }
+      ]
+    },
+    "2026-03": {
+      "Shanghai": [
+        {
+          "start": "2026-03-01",
+          "end": "2026-03-04"
+        }
+      ],
+      "Shenzhen": [
+        {
+          "start": "2026-03-13",
+          "end": "2026-03-15"
+        },
+        {
+          "start": "2026-03-27",
+          "end": "2026-03-29"
+        }
+      ],
+      "Hong_Kong": [
+        {
+          "start": "2026-03-05",
+          "end": "2026-03-12"
+        },
+        {
+          "start": "2026-03-16",
+          "end": "2026-03-26"
+        },
+        {
+          "start": "2026-03-30",
+          "end": "2026-03-31"
+        }
+      ]
+    },
+    "2026-09": {
+      "Chengdu": [
+        {
+          "start": "2026-09-01",
+          "end": "2026-09-01"
+        }
+      ],
+      "Shenzhen": [
+        {
+          "start": "2026-09-02",
+          "end": "2026-09-04"
+        },
+        {
+          "start": "2026-09-11",
+          "end": "2026-09-13"
+        },
+        {
+          "start": "2026-09-18",
+          "end": "2026-09-20"
+        }
+      ],
+      "Hong_Kong": [
+        {
+          "start": "2026-09-05",
+          "end": "2026-09-10"
+        },
+        {
+          "start": "2026-09-14",
+          "end": "2026-09-17"
+        },
+        {
+          "start": "2026-09-21",
+          "end": "2026-09-30"
+        }
+      ]
+    },
+    "2026-07": {
+      "Shenzhen": [
+        {
+          "start": "2026-07-01",
+          "end": "2026-07-04"
+        },
+        {
+          "start": "2026-07-06",
+          "end": "2026-07-07"
+        }
+      ],
+      "Hong_Kong": [
+        {
+          "start": "2026-07-05",
+          "end": "2026-07-05"
+        }
+      ],
+      "Chengdu": [
+        {
+          "start": "2026-07-08",
+          "end": "2026-07-31"
+        }
+      ]
+    },
+    "2026-08": {
+      "Chengdu": [
+        {
+          "start": "2026-08-01",
+          "end": "2026-08-31"
+        }
+      ]
+    },
+    "2026-06": {
+      "Hong_Kong": [
+        {
+          "start": "2026-06-01",
+          "end": "2026-06-10"
+        },
+        {
+          "start": "2026-06-16",
+          "end": "2026-06-18"
+        },
+        {
+          "start": "2026-06-25",
+          "end": "2026-06-25"
+        }
+      ],
+      "Shenzhen": [
+        {
+          "start": "2026-06-11",
+          "end": "2026-06-15"
+        },
+        {
+          "start": "2026-06-19",
+          "end": "2026-06-24"
+        },
+        {
+          "start": "2026-06-26",
+          "end": "2026-06-30"
+        }
+      ]
+    }
+  },
+  "optionsByMonth": {
+    "2026-10": {
+      "region": "Overseas",
+      "includeTravel": false,
+      "travelSelected": null,
+      "savedAt": "2026-10-01T04:40:16.310Z"
+    },
+    "2026-07": {
+      "region": "Mainland",
+      "includeTravel": false,
+      "travelSelected": null,
+      "savedAt": "2026-09-06T14:25:31Z"
+    },
+    "2026-06": {
+      "region": "Overseas",
+      "includeTravel": false,
+      "travelSelected": null,
+      "savedAt": "2026-09-06T14:25:31Z"
+    },
+    "2026-05": {
+      "region": "Overseas",
+      "includeTravel": true,
+      "travelSelected": [
+        "Bangkok"
+      ],
+      "savedAt": "2026-09-06T14:25:31Z"
+    },
+    "2026-04": {
+      "region": "Overseas",
+      "includeTravel": true,
+      "travelSelected": [
+        "Taipei"
+      ],
+      "savedAt": "2026-09-06T14:25:31Z"
+    },
+    "2026-03": {
+      "region": "Overseas",
+      "includeTravel": true,
+      "travelSelected": [
+        "Shanghai"
+      ],
+      "savedAt": "2026-09-06T14:25:31Z"
+    },
+    "2026-08": {
+      "region": "Mainland",
+      "includeTravel": false,
+      "travelSelected": null,
+      "savedAt": "2026-09-06T14:25:31Z"
+    },
+    "2026-09": {
+      "region": "Overseas",
+      "includeTravel": false,
+      "travelSelected": null,
+      "savedAt": "2026-09-07T08:12:06.035Z"
+    }
+  },
+  "overridesByMonth": {
+    "2026-10": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 85
+        },
+        "Hong_Kong": {
+          "HKD": 160
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 31.9,
+          "CNY": 224,
+          "HKD": 76
+        },
+        "Overseas": {
+          "USD": 23.4,
+          "CNY": 119,
+          "HKD": 196
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 85
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 160
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-09": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 85
+        },
+        "Hong_Kong": {
+          "HKD": 160
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 10,
+          "CNY": 183,
+          "HKD": 76
+        },
+        "Overseas": {
+          "USD": 23.4,
+          "CNY": 119,
+          "HKD": 76
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 139,
+        "USD": 85,
+        "HKD": 319
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-03": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 80
+        },
+        "Hong_Kong": {
+          "HKD": 150
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 10,
+          "CNY": 34,
+          "HKD": 88
+        },
+        "Overseas": {
+          "USD": 10,
+          "CNY": 34,
+          "HKD": 88
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-04": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 80
+        },
+        "Hong_Kong": {
+          "HKD": 150
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 22,
+          "CNY": 64,
+          "HKD": 46
+        },
+        "Overseas": {
+          "USD": 10,
+          "CNY": 34,
+          "HKD": 88
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-05": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 80
+        },
+        "Hong_Kong": {
+          "HKD": 150
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 22,
+          "CNY": 64,
+          "HKD": 46
+        },
+        "Overseas": {
+          "USD": 10,
+          "CNY": 59,
+          "HKD": 88
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-06": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 80
+        },
+        "Hong_Kong": {
+          "HKD": 150
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 22,
+          "CNY": 64,
+          "HKD": 46
+        },
+        "Overseas": {
+          "USD": 10,
+          "CNY": 69,
+          "HKD": 88
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-08": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 80
+        },
+        "Hong_Kong": {
+          "HKD": 150
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 22,
+          "CNY": 129,
+          "HKD": 46
+        },
+        "Overseas": {
+          "USD": 10,
+          "CNY": 218,
+          "HKD": 76
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 30,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-07": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 80
+        },
+        "Hong_Kong": {
+          "HKD": 150
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 22,
+          "CNY": 64,
+          "HKD": 46
+        },
+        "Overseas": {
+          "USD": 10,
+          "CNY": 218,
+          "HKD": 76
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 0
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 95
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 180
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    }
+  },
+  "resultsByMonth": {
+    "2026-10": {
+      "summary": {
+        "计算月份": "2026年10月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 3929.31,
+        "固定费用合计(人民币)": 443.43,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 4372.74
+      },
+      "daily_details": [
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 25,
+          "daily_standard_local": 160,
+          "variable_cost_local": 4000,
+          "variable_cost_rmb": 3419.31
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 6,
+          "daily_standard_local": 85,
+          "variable_cost_local": 510,
+          "variable_cost_rmb": 510
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.7046,
+          "local_cost": 23.4,
+          "rmb_cost": 156.89
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 119,
+          "rmb_cost": 119
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8548,
+          "local_cost": 196,
+          "rmb_cost": 167.55
+        }
+      ],
+      "extra_details": [],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/10/3 19:23:40",
+      "region": "Overseas",
+      "includeTravel": false,
+      "stale": false
+    },
+    "2026-09": {
+      "summary": {
+        "计算月份": "2026年9月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 3532.31,
+        "固定费用合计(人民币)": 1323.32,
+        "额外预算合计(人民币)": 982.28,
+        "总预算(人民币)": 4855.63
+      },
+      "daily_details": [
+        {
+          "location": "Chengdu",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 1,
+          "daily_standard_local": 30,
+          "variable_cost_local": 30,
+          "variable_cost_rmb": 30
+        },
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 20,
+          "daily_standard_local": 160,
+          "variable_cost_local": 3200,
+          "variable_cost_rmb": 2737.31
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 9,
+          "daily_standard_local": 85,
+          "variable_cost_local": 765,
+          "variable_cost_rmb": 765
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.7101,
+          "local_cost": 23.4,
+          "rmb_cost": 157.02
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 119,
+          "rmb_cost": 119
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8556,
+          "local_cost": 76,
+          "rmb_cost": 65.02
+        }
+      ],
+      "extra_details": [
+        {
+          "location": "Extra",
+          "type": "额外预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 139,
+          "rmb_cost": 139
+        },
+        {
+          "location": "Extra",
+          "type": "额外预算",
+          "currency": "USD",
+          "avg_rate": 6.7101,
+          "local_cost": 85,
+          "rmb_cost": 570.35
+        },
+        {
+          "location": "Extra",
+          "type": "额外预算",
+          "currency": "HKD",
+          "avg_rate": 0.8556,
+          "local_cost": 319,
+          "rmb_cost": 272.93
+        }
+      ],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/10/1 12:56:45",
+      "region": "Overseas",
+      "includeTravel": false,
+      "stale": false
+    },
+    "2026-08": {
+      "summary": {
+        "计算月份": "2026年8月",
+        "居住区域": "Mainland",
+        "可变费用合计(人民币)": 930,
+        "固定费用合计(人民币)": 518.87,
+        "额外预算合计(人民币)": 202.13,
+        "总预算(人民币)": 1448.87
+      },
+      "daily_details": [
+        {
+          "location": "Chengdu",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 31,
+          "daily_standard_local": 30,
+          "variable_cost_local": 930,
+          "variable_cost_rmb": 930
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Mainland",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.7375,
+          "local_cost": 22,
+          "rmb_cost": 148.23
+        },
+        {
+          "location": "Mainland",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 129,
+          "rmb_cost": 129
+        },
+        {
+          "location": "Mainland",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8591,
+          "local_cost": 46,
+          "rmb_cost": 39.52
+        }
+      ],
+      "extra_details": [
+        {
+          "location": "Extra",
+          "type": "额外预算",
+          "currency": "USD",
+          "avg_rate": 6.7375,
+          "local_cost": 30,
+          "rmb_cost": 202.13
+        }
+      ],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/9/28 19:54:25",
+      "region": "Mainland",
+      "includeTravel": false,
+      "stale": false
+    },
+    "2026-07": {
+      "summary": {
+        "计算月份": "2026年7月",
+        "居住区域": "Mainland",
+        "可变费用合计(人民币)": 1329.83,
+        "固定费用合计(人民币)": 252.91,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 1582.74
+      },
+      "daily_details": [
+        {
+          "location": "Chengdu",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 24,
+          "daily_standard_local": 30,
+          "variable_cost_local": 720,
+          "variable_cost_rmb": 720
+        },
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 1,
+          "daily_standard_local": 150,
+          "variable_cost_local": 150,
+          "variable_cost_rmb": 129.83
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 6,
+          "daily_standard_local": 80,
+          "variable_cost_local": 480,
+          "variable_cost_rmb": 480
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Mainland",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.779,
+          "local_cost": 22,
+          "rmb_cost": 149.14
+        },
+        {
+          "location": "Mainland",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 64,
+          "rmb_cost": 64
+        },
+        {
+          "location": "Mainland",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8646,
+          "local_cost": 46,
+          "rmb_cost": 39.77
+        }
+      ],
+      "extra_details": [],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/9/28 19:53:59",
+      "region": "Mainland",
+      "includeTravel": false,
+      "stale": false
+    },
+    "2026-06": {
+      "summary": {
+        "计算月份": "2026年6月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 3093.78,
+        "固定费用合计(人民币)": 212.8,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 3306.58
+      },
+      "daily_details": [
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 14,
+          "daily_standard_local": 150,
+          "variable_cost_local": 2100,
+          "variable_cost_rmb": 1813.78
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 16,
+          "daily_standard_local": 80,
+          "variable_cost_local": 1280,
+          "variable_cost_rmb": 1280
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.7741,
+          "local_cost": 10,
+          "rmb_cost": 67.74
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 69,
+          "rmb_cost": 69
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8643,
+          "local_cost": 88,
+          "rmb_cost": 76.06
+        }
+      ],
+      "extra_details": [],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/9/28 19:53:25",
+      "region": "Overseas",
+      "includeTravel": false,
+      "stale": false
+    },
+    "2026-05": {
+      "summary": {
+        "计算月份": "2026年5月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 4743.26,
+        "固定费用合计(人民币)": 622.04,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 5365.31
+      },
+      "daily_details": [
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 18,
+          "daily_standard_local": 150,
+          "variable_cost_local": 2700,
+          "variable_cost_rmb": 2345.1
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 4,
+          "daily_standard_local": 80,
+          "variable_cost_local": 320,
+          "variable_cost_rmb": 320
+        },
+        {
+          "location": "Bangkok",
+          "type": "旅居每日预算",
+          "currency": "THB",
+          "day_count": 9,
+          "daily_standard_local": 1100,
+          "variable_cost_local": 9900,
+          "variable_cost_rmb": 2078.16
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.8014,
+          "local_cost": 10,
+          "rmb_cost": 68.01
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 59,
+          "rmb_cost": 59
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8683,
+          "local_cost": 88,
+          "rmb_cost": 76.41
+        },
+        {
+          "location": "Bangkok",
+          "type": "旅居一次性费用",
+          "currency": "THB",
+          "avg_rate": 0.2093,
+          "local_cost": 2000,
+          "rmb_cost": 418.62
+        }
+      ],
+      "extra_details": [],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/9/28 19:52:53",
+      "region": "Overseas",
+      "includeTravel": true,
+      "stale": false
+    },
+    "2026-04": {
+      "summary": {
+        "计算月份": "2026年4月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 4860.16,
+        "固定费用合计(人民币)": 395.13,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 5255.29
+      },
+      "daily_details": [
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 21,
+          "daily_standard_local": 150,
+          "variable_cost_local": 3150,
+          "variable_cost_rmb": 2746.77
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 3,
+          "daily_standard_local": 80,
+          "variable_cost_local": 240,
+          "variable_cost_rmb": 240
+        },
+        {
+          "location": "Taipei",
+          "type": "旅居每日预算",
+          "currency": "TWD",
+          "day_count": 6,
+          "daily_standard_local": 1450,
+          "variable_cost_local": 8700,
+          "variable_cost_rmb": 1873.4
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.8403,
+          "local_cost": 10,
+          "rmb_cost": 68.4
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 34,
+          "rmb_cost": 34
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8733,
+          "local_cost": 88,
+          "rmb_cost": 76.85
+        },
+        {
+          "location": "Taipei",
+          "type": "旅居一次性费用",
+          "currency": "TWD",
+          "avg_rate": 0.2159,
+          "local_cost": 1000,
+          "rmb_cost": 215.88
+        }
+      ],
+      "extra_details": [],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/9/28 19:52:11",
+      "region": "Overseas",
+      "includeTravel": true,
+      "stale": false
+    },
+    "2026-03": {
+      "summary": {
+        "计算月份": "2026年3月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 3955.38,
+        "固定费用合计(人民币)": 380.43,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 4335.81
+      },
+      "daily_details": [
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 21,
+          "daily_standard_local": 150,
+          "variable_cost_local": 3150,
+          "variable_cost_rmb": 2775.38
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 6,
+          "daily_standard_local": 80,
+          "variable_cost_local": 480,
+          "variable_cost_rmb": 480
+        },
+        {
+          "location": "Shanghai",
+          "type": "旅居每日预算",
+          "currency": "CNY",
+          "day_count": 4,
+          "daily_standard_local": 175,
+          "variable_cost_local": 700,
+          "variable_cost_rmb": 700
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.8924,
+          "local_cost": 10,
+          "rmb_cost": 68.92
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 34,
+          "rmb_cost": 34
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8807,
+          "local_cost": 88,
+          "rmb_cost": 77.5
+        },
+        {
+          "location": "Shanghai",
+          "type": "旅居一次性费用",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 200,
+          "rmb_cost": 200
+        }
+      ],
+      "extra_details": [],
+      "warnings": [],
+      "deduped_entries": 0,
+      "savedAt": "2026/9/28 19:51:11",
+      "region": "Overseas",
+      "includeTravel": true,
+      "stale": false
+    }
+  },
+  "annualBudgetsByYear": {
+    "2026": {
+      "CNY": 27950.0,
+      "HKD": 2000.0,
+      "THB": 0.0,
+      "TWD": 0.0,
+      "USD": 0.0
+    }
+  },
+  "annualResultsByYear": {
+    "2026": {
+      "summary": {
+        "全年预算合计(人民币)": 29692.65
+      },
+      "details": [
+        {
+          "currency": "CNY",
+          "amount": 27950,
+          "average_rate": 1,
+          "cny_amount": 27950,
+          "observation_count": 1,
+          "first_date": "2026-10-01",
+          "last_date": "2026-10-01"
+        },
+        {
+          "currency": "HKD",
+          "amount": 2000,
+          "average_rate": 0.8713257535909995,
+          "cny_amount": 1742.65,
+          "observation_count": 195,
+          "first_date": "2026-01-02",
+          "last_date": "2026-10-01"
+        },
+        {
+          "currency": "THB",
+          "amount": 0,
+          "average_rate": 0.2101422463472073,
+          "cny_amount": 0,
+          "observation_count": 195,
+          "first_date": "2026-01-02",
+          "last_date": "2026-10-01"
+        },
+        {
+          "currency": "TWD",
+          "amount": 0,
+          "average_rate": 0.21493018949643158,
+          "cny_amount": 0,
+          "observation_count": 195,
+          "first_date": "2026-01-02",
+          "last_date": "2026-10-01"
+        },
+        {
+          "currency": "USD",
+          "amount": 0,
+          "average_rate": 6.822391778994829,
+          "cny_amount": 0,
+          "observation_count": 195,
+          "first_date": "2026-01-02",
+          "last_date": "2026-10-01"
+        }
+      ],
+      "year": 2026,
+      "start_date": "2026-01-01",
+      "requested_through": "2026-10-01",
+      "observed_through": "2026-10-01",
+      "source": "Yahoo Finance",
+      "price_field": "Close",
+      "non_trading_days": "excluded",
+      "errors": {},
+      "calculatedAt": "2026/10/1 12:59:04",
+      "stale": true,
+      "staleReason": "全年收盘汇率覆盖范围已更新",
+      "staleAt": "2026-10-01T05:47:13.939Z"
+    }
+  }
+}
