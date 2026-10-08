@@ -118,7 +118,7 @@
 # Windows PowerShell（Python 3.10+）
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python main_requirement.py
 python main_web.py
 ```
 
@@ -126,11 +126,15 @@ python main_web.py
 # macOS / Linux（Python 3.10+）
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python main_requirement.py
 python main_web.py
 ```
 
 启动后会自动打开浏览器，默认地址为 <http://127.0.0.1:8123>。
+
+`main_requirement.py` 会使用当前虚拟环境的 Python 解释器，将
+`requirements.txt` 中的全部依赖安装或升级到该环境；后续依赖清单有变化时，
+重新运行此脚本即可。
 
 ```bash
 
@@ -183,6 +187,7 @@ python -m py_compile functions.py main_web.py
 每月预算/
 ├── AGENTS.md           # 项目边界、计算契约、数据安全与验证入口
 ├── VALIDATION.md       # 已完成修复的验证证据与环境限制
+├── main_requirement.py # 一键安装 requirements.txt 中的全部依赖
 ├── main_web.py         # FastAPI 后端、状态持久化和月度/年度汇率接口
 ├── functions.py        # 月度/年度计算引擎与出厂默认标准（启动时可能被 defaults.json 覆盖）
 ├── data/
