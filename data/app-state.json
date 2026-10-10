@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-03T11:23:40Z",
+  "updatedAt": "2026-10-10T13:45:01Z",
   "year": 2026,
   "month": 10,
   "itineraryByMonth": {
@@ -296,7 +296,7 @@
         "Overseas": {
           "USD": 23.4,
           "CNY": 119,
-          "HKD": 196
+          "HKD": 214
         }
       },
       "travel": {
@@ -1256,10 +1256,10 @@
       "summary": {
         "计算月份": "2026年10月",
         "居住区域": "Overseas",
-        "可变费用合计(人民币)": 3929.31,
-        "固定费用合计(人民币)": 443.43,
+        "可变费用合计(人民币)": 3925.97,
+        "固定费用合计(人民币)": 458.59,
         "额外预算合计(人民币)": 0,
-        "总预算(人民币)": 4372.74
+        "总预算(人民币)": 4384.56
       },
       "daily_details": [
         {
@@ -1269,7 +1269,7 @@
           "day_count": 25,
           "daily_standard_local": 160,
           "variable_cost_local": 4000,
-          "variable_cost_rmb": 3419.31
+          "variable_cost_rmb": 3415.97
         },
         {
           "location": "Shenzhen",
@@ -1286,9 +1286,9 @@
           "location": "Overseas",
           "type": "固定预算",
           "currency": "USD",
-          "avg_rate": 6.7046,
+          "avg_rate": 6.702,
           "local_cost": 23.4,
-          "rmb_cost": 156.89
+          "rmb_cost": 156.83
         },
         {
           "location": "Overseas",
@@ -1302,15 +1302,15 @@
           "location": "Overseas",
           "type": "固定预算",
           "currency": "HKD",
-          "avg_rate": 0.8548,
-          "local_cost": 196,
-          "rmb_cost": 167.55
+          "avg_rate": 0.854,
+          "local_cost": 214,
+          "rmb_cost": 182.77
         }
       ],
       "extra_details": [],
       "warnings": [],
       "deduped_entries": 0,
-      "savedAt": "2026/10/3 19:23:40",
+      "savedAt": "2026/10/10 21:44:39",
       "region": "Overseas",
       "includeTravel": false,
       "stale": false
@@ -1863,7 +1863,7 @@
   "annualResultsByYear": {
     "2026": {
       "summary": {
-        "全年预算合计(人民币)": 29692.65
+        "全年预算合计(人民币)": 29691.45
       },
       "details": [
         {
@@ -1872,58 +1872,55 @@
           "average_rate": 1,
           "cny_amount": 27950,
           "observation_count": 1,
-          "first_date": "2026-10-01",
-          "last_date": "2026-10-01"
+          "first_date": "2026-10-10",
+          "last_date": "2026-10-10"
         },
         {
           "currency": "HKD",
           "amount": 2000,
-          "average_rate": 0.8713257535909995,
-          "cny_amount": 1742.65,
-          "observation_count": 195,
+          "average_rate": 0.8707228114109228,
+          "cny_amount": 1741.45,
+          "observation_count": 202,
           "first_date": "2026-01-02",
-          "last_date": "2026-10-01"
+          "last_date": "2026-10-10"
         },
         {
           "currency": "THB",
           "amount": 0,
-          "average_rate": 0.2101422463472073,
+          "average_rate": 0.20976969326781755,
           "cny_amount": 0,
-          "observation_count": 195,
+          "observation_count": 202,
           "first_date": "2026-01-02",
-          "last_date": "2026-10-01"
+          "last_date": "2026-10-10"
         },
         {
           "currency": "TWD",
           "amount": 0,
-          "average_rate": 0.21493018949643158,
+          "average_rate": 0.2147348464125454,
           "cny_amount": 0,
-          "observation_count": 195,
+          "observation_count": 202,
           "first_date": "2026-01-02",
-          "last_date": "2026-10-01"
+          "last_date": "2026-10-10"
         },
         {
           "currency": "USD",
           "amount": 0,
-          "average_rate": 6.822391778994829,
+          "average_rate": 6.818186623035091,
           "cny_amount": 0,
-          "observation_count": 195,
+          "observation_count": 202,
           "first_date": "2026-01-02",
-          "last_date": "2026-10-01"
+          "last_date": "2026-10-10"
         }
       ],
       "year": 2026,
       "start_date": "2026-01-01",
-      "requested_through": "2026-10-01",
-      "observed_through": "2026-10-01",
+      "requested_through": "2026-10-10",
+      "observed_through": "2026-10-10",
       "source": "Yahoo Finance",
       "price_field": "Close",
       "non_trading_days": "excluded",
       "errors": {},
-      "calculatedAt": "2026/10/1 12:59:04",
-      "stale": true,
-      "staleReason": "全年收盘汇率覆盖范围已更新",
-      "staleAt": "2026-10-01T05:47:13.939Z"
+      "calculatedAt": "2026/10/10 21:45:01"
     }
   }
 }
