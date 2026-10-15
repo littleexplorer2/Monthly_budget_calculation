@@ -1,0 +1,427 @@
+/* 界面组装、事件绑定及初始化流程。
+ * 跨模块调用由 web/js/app.js 显式注入；模块只导出本职责的接口。
+ */
+(function register(registry) {
+  'use strict';
+  registry.shell = Object.freeze({
+    dependencies: Object.freeze(["analysis","annual","http","calendar","data","feedback","itinerary","locations","monthly","network","persistence","rates","results","shared","standards","standardsEditor","standardsView","state","travel"]),
+    create({ analysis: analysisModule, annual: annualModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+      const { state } = stateModule;
+
+      /* --------------------------------------------------------------------------
+       * 页签与月份切换
+       * ------------------------------------------------------------------------ */
+      function switchTab(name) {
+        sharedModule.$$('.side-nav-item').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+        sharedModule.$$('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${name}`));
+        if (document.body && document.body.classList) document.body.classList.toggle('annual-view', name === 'analysis');
+        if (name === 'rates') {
+          ratesModule.loadRates();
+          setTimeout(ratesModule.resizeRateCharts, 60);
+        }
+        if (name === 'analysis') {
+          annualModule.renderAnnualBudget();
+          annualModule.loadAnnualRates();
+          analysisModule.renderAnalysis();
+          setTimeout(analysisModule.resizeAnalysisChart, 60);
+        }
+      }
+
+      function renderAll() {
+        sharedModule.$('#month-label').textContent = `${state.year}年${sharedModule.pad2(state.month)}月`;
+        monthlyModule.syncOptionsUI();
+        sharedModule.$('#itinerary-month').textContent = `${state.year}年${state.month}月`;
+        sharedModule.$('#rates-title').textContent = `${state.year}年${state.month}月 汇率走势（兑人民币）`;
+        if (state.ratesMonth !== monthlyModule.monthKey()) {
+          state.ratesData = null;
+          state.ratesFromCalc = false;
+          ratesModule.destroyRateCharts();
+          const charts = sharedModule.$('#rates-charts');
+          if (charts) charts.innerHTML = '';
+          const stats = sharedModule.$('#rates-stats-table');
+          if (stats) stats.innerHTML = '';
+        }
+        calendarModule.renderCalendar();
+        itineraryModule.renderItinerary();
+        calendarModule.updateManualDefaults();
+        // 正在汇率页时切换月份，立即重新拉取当月汇率
+        if (sharedModule.$('#tab-rates').classList.contains('active') && !state.ratesData) {
+          ratesModule.loadRates();
+        }
+        if (sharedModule.$('#tab-analysis') && sharedModule.$('#tab-analysis').classList.contains('active')) {
+          annualModule.renderAnnualBudget();
+          analysisModule.renderAnalysis();
+        }
+      }
+
+      /* --------------------------------------------------------------------------
+       * 事件绑定
+       * ------------------------------------------------------------------------ */
+      function bindEvents() {
+        sharedModule.$$('.side-nav-item').forEach((t) => t.addEventListener('click', () => service.switchTab(t.dataset.tab)));
+
+        // 月份导航
+        sharedModule.$('#btn-prev-month').addEventListener('click', () => monthlyModule.changeMonth(-1));
+        sharedModule.$('#btn-next-month').addEventListener('click', () => monthlyModule.changeMonth(1));
+        sharedModule.$('#btn-this-month').addEventListener('click', monthlyModule.goThisMonth);
+
+        // 区域选择（选项面板分段按钮；固定预算表按区域过滤显示）
+        sharedModule.$('#region-seg').addEventListener('click', (ev) => {
+          const btn = ev.target.closest('.seg-btn[data-region]');
+          if (!btn || btn.dataset.region === state.region) return;
+          state.region = btn.dataset.region;
+          persistenceModule.saveState(true);
+          // 分段高亮即时更新
+          sharedModule.$$('#region-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.region === state.region));
+          standardsViewModule.renderStandards();          // 刷新固定预算表（仅显示新区域）
+          standardsViewModule.invalidateConfirmation();   // 应用的标准集发生变化，需重新确认
+        });
+
+        // 计算
+        sharedModule.$('#btn-calculate').addEventListener('click', monthlyModule.calculate);
+        sharedModule.$('#btn-recalc').addEventListener('click', monthlyModule.calculate);
+
+        // 预算标准输入（事件委托）
+        // 关键：按输入框所在的区域决定改哪一份数据——默认标准区改草稿，其余改当月标准。
+        // 两个区域同时可见，不能用全局展开状态判断。
+        sharedModule.$('#tab-standards').addEventListener('input', (ev) => {
+          const el = ev.target;
+          if (!el.matches('input[data-cat]')) return;
+          const { cat, loc, curr, field } = el.dataset;
+          const v = Number(el.value);
+          if (!Number.isFinite(v) || v < 0) {
+            el.classList.add('invalid');
+            return;
+          }
+          el.classList.remove('invalid');
+          const inDefaultsEditor = !!el.closest('.defaults-editor');
+          if (inDefaultsEditor && state.defaultsDraft) {
+            standardsEditorModule.applyDefaultsInput(cat, loc, curr, field, v);
+            standardsEditorModule.refreshRowChip(cat, loc, curr, field, el);
+            return;
+          }
+          standardsEditorModule.applyMonthInput(cat, loc, curr, field, v);
+          standardsEditorModule.refreshRowChip(cat, loc, curr, field, el); // 「与默认值不同」标记即时出现/消失
+        });
+
+        // 新建 / 删除自定义标准；差异标记上的「存入默认 / 还原」；默认标准区的「＋ 新建」
+        sharedModule.$('#tab-standards').addEventListener('click', (ev) => {
+          const addBtn = ev.target.closest('[data-action="add-std"]');
+          if (addBtn) { standardsEditorModule.openAddStandard(addBtn.dataset.cat, addBtn.dataset.region); return; }
+          if (ev.target.closest('#btn-add-variable')) { standardsEditorModule.openAddStandard('variable'); return; }
+          if (ev.target.closest('#btn-add-fixed')) { standardsEditorModule.openAddStandard('fixed', state.region); return; }
+          if (ev.target.closest('#btn-add-travel')) { standardsEditorModule.openAddStandard('travel'); return; }
+          const rowBtn = ev.target.closest('button[data-action="revert-row"]');
+          if (rowBtn) {
+            const holder = rowBtn.closest('.chip-diff');
+            const ds = (holder && holder.dataset) || rowBtn.dataset;
+            standardsEditorModule.restoreDefaultEntry(ds.cat, ds.loc, ds.curr, ds.field || null);
+            return;
+          }
+          const btn = ev.target.closest('button[data-action="del-custom"]');
+          if (btn && btn.dataset.loc) standardsEditorModule.deleteCustomStandard(btn.dataset.loc);
+        });
+
+        // 默认预算标准弹窗：顶栏按钮打开，✕ / 点击遮罩关闭，弹窗内保存或放弃
+        sharedModule.$('#btn-defaults-modal').addEventListener('click', standardsEditorModule.openDefaultsModal);
+        sharedModule.$('#btn-defaults-close').addEventListener('click', standardsEditorModule.requestCloseDefaultsModal);
+        sharedModule.$('#defaults-modal').addEventListener('click', (ev) => {
+          if (ev.target === ev.currentTarget) standardsEditorModule.requestCloseDefaultsModal(); // 点击遮罩关闭
+        });
+        sharedModule.$('#btn-save-defaults').addEventListener('click', standardsEditorModule.saveDefaultStandardsToServer);
+        // 默认标准弹窗的显示范围开关：纯界面过滤，只重绘弹窗，绝不触发持久化
+        sharedModule.$('#chk-defaults-show-all').addEventListener('change', (ev) => {
+          state.defaultsShowAll = !!ev.target.checked;
+          standardsViewModule.renderDefaultsPanel();
+          standardsViewModule.updateDefaultsScopeHint();
+        });
+        sharedModule.$('#btn-discard-defaults').addEventListener('click', () => {
+          if (!standardsEditorModule.defaultsDraftDirty()) { feedbackModule.toast('默认标准没有未保存的改动', 'info'); return; }
+          if (!confirm('放弃对默认标准的未保存修改，恢复为服务器上已保存的默认值？')) return;
+          standardsEditorModule.reconstructDefaultsDraft();
+          standardsViewModule.renderStandards();
+          calendarModule.renderLocChips();
+          travelModule.renderTravelPicker();
+          feedbackModule.toast('已放弃未保存的默认标准修改', 'info');
+        });
+        sharedModule.$('#btn-add-ok').addEventListener('click', standardsEditorModule.confirmAddStandard);
+        sharedModule.$('#btn-add-cancel').addEventListener('click', standardsEditorModule.closeAddStandard);
+        sharedModule.$('#btn-add-close').addEventListener('click', standardsEditorModule.closeAddStandard);
+        sharedModule.$('#add-std-modal').addEventListener('click', (ev) => {
+          if (ev.target === ev.currentTarget) standardsEditorModule.closeAddStandard();
+        });
+        sharedModule.$('#add-std-form').addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') standardsEditorModule.confirmAddStandard();
+        });
+
+        // 「恢复默认」只作用于本月；「恢复出厂默认」只改服务器默认标准
+        sharedModule.$('#btn-reset-standards').addEventListener('click', standardsEditorModule.resetMonthToDefaults);
+        sharedModule.$('#btn-reset-factory').addEventListener('click', standardsEditorModule.restoreFactoryDefaults);
+
+        // 确认预算标准（选项面板）
+        sharedModule.$('#chk-standards-confirmed').addEventListener('change', (ev) => {
+          state.standardsConfirmed = ev.target.checked;
+          const panel = sharedModule.$('#options-panel');
+          if (panel) {
+            panel.classList.toggle('confirmed', ev.target.checked);
+            panel.classList.remove('attention');
+          }
+          if (ev.target.checked) feedbackModule.toast('已确认预算标准，可以添加行程并计算', 'success');
+        });
+
+        // 旅居开关与选择
+        sharedModule.$('#chk-include-travel').addEventListener('change', (ev) => {
+          state.includeTravel = !!ev.target.checked;
+          persistenceModule.saveState(true);
+          monthlyModule.updateTravelUiVisibility();
+          travelModule.renderTravelPicker();
+          calendarModule.renderLocChips();
+          standardsViewModule.invalidateConfirmation();
+        });
+        sharedModule.$('#travel-picker-btn').addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const menu = sharedModule.$('#travel-picker-menu');
+          travelModule.toggleTravelPicker(!!(menu && menu.hidden));
+        });
+        sharedModule.$('#tp-all').addEventListener('click', () => travelModule.selectAllTravel(true));
+        sharedModule.$('#tp-none').addEventListener('click', () => travelModule.selectAllTravel(false));
+        sharedModule.$('#tp-list').addEventListener('change', (ev) => {
+          const chk = ev.target.closest('input[data-tp-loc]');
+          if (chk) travelModule.toggleTravelLocation(chk.dataset.tpLoc, chk.checked);
+        });
+        document.addEventListener('click', (ev) => {
+          const picker = sharedModule.$('#travel-picker-wrap');
+          if (picker && !picker.contains(ev.target)) travelModule.toggleTravelPicker(false);
+        });
+
+        // 地点 chips（事件委托）
+        sharedModule.$('#tab-itinerary').addEventListener('click', (ev) => {
+          const chip = ev.target.closest('.chip');
+          if (chip) calendarModule.selectLocation(chip.dataset.location);
+        });
+
+        // 日历选段
+        sharedModule.$('#cal-grid').addEventListener('click', (ev) => {
+          const cell = ev.target.closest('.cal-cell:not(.empty)');
+          if (!cell) return;
+          if (!state.activeLocation) { feedbackModule.toast('请先选择地点', 'warn'); return; }
+          const ds = cell.dataset.date;
+          if (!state.calSel.start) {
+            state.calSel = { start: ds, end: null };
+          } else if (!state.calSel.end) {
+            const [a, b] = state.calSel.start <= ds ? [state.calSel.start, ds] : [ds, state.calSel.start];
+            itineraryModule.addRange(state.activeLocation, a, b);
+            state.calSel = { start: null, end: null };
+          } else {
+            state.calSel = { start: ds, end: null };
+          }
+          calendarModule.renderCalendar();
+        });
+
+        // 日历悬停预览（选中开始日期后预览区间）
+        sharedModule.$('#cal-grid').addEventListener('mouseover', (ev) => {
+          const cell = ev.target.closest('.cal-cell:not(.empty)');
+          if (!cell || !state.calSel.start || state.calSel.end) return;
+          sharedModule.$$('#cal-grid .cal-cell.preview').forEach((c) => c.classList.remove('preview'));
+          const s = state.calSel.start;
+          const e = cell.dataset.date;
+          const [a, b] = s <= e ? [s, e] : [e, s];
+          sharedModule.$$('#cal-grid .cal-cell').forEach((c) => {
+            const ds = c.dataset.date;
+            if (ds && ds >= a && ds <= b) c.classList.add('preview');
+          });
+        });
+        sharedModule.$('#cal-grid').addEventListener('mouseleave', () => {
+          sharedModule.$$('#cal-grid .cal-cell.preview').forEach((c) => c.classList.remove('preview'));
+        });
+
+        // 手动输入时间段
+        sharedModule.$('#btn-add-range').addEventListener('click', () => {
+          if (!state.activeLocation) { feedbackModule.toast('请先选择地点', 'warn'); return; }
+          const s = sharedModule.$('#cal-manual-start').value;
+          const e = sharedModule.$('#cal-manual-end').value;
+          if (!s || !e) { feedbackModule.toast('请填写开始与结束日期', 'warn'); return; }
+          if (s > e) { feedbackModule.toast('开始日期不能晚于结束日期', 'warn'); return; }
+          if (!s.startsWith(monthlyModule.monthKey()) || !e.startsWith(monthlyModule.monthKey())) {
+            feedbackModule.toast(`日期必须属于当前计算月份（${state.year}年${state.month}月）`, 'warn');
+            return;
+          }
+          itineraryModule.addRange(state.activeLocation, s, e);
+        });
+
+        // 行程清单操作（删除区间 / 清空地点）
+        sharedModule.$('#itinerary-list').addEventListener('click', (ev) => {
+          const btn = ev.target.closest('button[data-action]');
+          if (!btn) return;
+          const { action, loc, idx } = btn.dataset;
+          const itin = itineraryModule.currentItinerary();
+          if (action === 'del-range') {
+            itin[loc].splice(Number(idx), 1);
+            if (!itin[loc].length) delete itin[loc];
+            feedbackModule.toast('已删除时间段', 'info');
+          } else if (action === 'clear-loc') {
+            delete itin[loc];
+            feedbackModule.toast(`已清空 ${locationsModule.locName(loc)} 的行程`, 'info');
+          }
+          persistenceModule.saveState();
+          calendarModule.renderCalendar();
+          itineraryModule.renderItinerary();
+        });
+
+        // 清空本月全部行程
+        sharedModule.$('#btn-clear-all').addEventListener('click', () => {
+          const itin = itineraryModule.currentItinerary();
+          const count = Object.values(itin).reduce((a, r) => a + r.length, 0);
+          if (!count) { feedbackModule.toast('本月暂无行程', 'warn'); return; }
+          if (!window.confirm(`确定清空 ${state.year}年${state.month}月 的全部 ${count} 条时间段吗？`)) return;
+          state.itineraryByMonth[monthlyModule.monthKey()] = {};
+          persistenceModule.saveState();
+          calendarModule.renderCalendar();
+          itineraryModule.renderItinerary();
+          feedbackModule.toast('已清空本月行程', 'success');
+        });
+
+        // 汇率重新拉取 / CNY 显隐 / 窗口尺寸自适应 / 网络重检
+        sharedModule.$('#btn-refresh-rates').addEventListener('click', () => ratesModule.loadRates(true));
+        sharedModule.$('#chk-show-cny').addEventListener('change', () => { if (state.ratesData) ratesModule.renderRateCharts(); });
+        window.addEventListener('resize', () => {
+          ratesModule.resizeRateCharts();
+          analysisModule.resizeAnalysisChart();
+        });
+        sharedModule.$('#btn-network-retry').addEventListener('click', () => networkModule.runNetworkCheck(true));
+
+        // 全年预算：年份/行情与月度页独立，金额仍走唯一状态持久化管线。
+        sharedModule.$('#annual-year').addEventListener('change', (ev) => {
+          state.annualYear = Number(ev.target.value);
+          state.annualRatesData = null;
+          state.annualRatesYear = null;
+          annualModule.renderAnnualBudget();
+          annualModule.loadAnnualRates();
+        });
+        sharedModule.$('#btn-refresh-annual-rates').addEventListener('click', () => annualModule.loadAnnualRates(true));
+        sharedModule.$('#btn-calculate-annual').addEventListener('click', annualModule.calculateAnnualBudget);
+        sharedModule.$('#annual-budget-rows').addEventListener('input', (ev) => {
+          const input = ev.target.closest('input[data-annual-currency]');
+          if (!input) return;
+          const amount = Number(input.value);
+          if (!Number.isFinite(amount) || amount < 0) {
+            input.classList.add('invalid');
+            return;
+          }
+          input.classList.remove('invalid');
+          annualModule.annualBudgetAmounts()[input.dataset.annualCurrency] = amount;
+          annualModule.invalidateAnnualResult();
+          persistenceModule.persist('debounce', 'annual');
+        });
+
+        const analysisToolbar = sharedModule.$('.analysis-toolbar');
+        if (analysisToolbar) {
+          analysisToolbar.addEventListener('change', (ev) => {
+            if (ev.target.closest('.tag-check, select')) analysisModule.renderAnalysis();
+          });
+        }
+
+        // 数据管理弹窗
+        sharedModule.$('#btn-data-manager').addEventListener('click', dataModule.openDataManager);
+        const dataTop = sharedModule.$('#btn-data-manager-top');
+        if (dataTop) dataTop.addEventListener('click', dataModule.openDataManager);
+        sharedModule.$('#btn-data-close').addEventListener('click', dataModule.closeDataManager);
+        sharedModule.$('#btn-data-close2').addEventListener('click', dataModule.closeDataManager);
+        sharedModule.$('#data-modal').addEventListener('click', (ev) => {
+          if (ev.target === ev.currentTarget) dataModule.closeDataManager(); // 点击遮罩关闭
+        });
+        sharedModule.$('#data-modal-list').addEventListener('click', (ev) => {
+          const btn = ev.target.closest('button[data-action="del-month"]');
+          if (btn && btn.dataset.month) dataModule.deleteMonthData(btn.dataset.month);
+        });
+        sharedModule.$('#btn-data-clear-all').addEventListener('click', dataModule.clearAllData);
+        sharedModule.$('#btn-data-upload').addEventListener('click', dataModule.uploadAllData);
+      }
+
+      /* --------------------------------------------------------------------------
+       * 初始化
+       * ------------------------------------------------------------------------ */
+      async function init() {
+        feedbackModule.setLoading(false);
+        feedbackModule.setElVisible(sharedModule.$('#data-modal'), false);
+        feedbackModule.setElVisible(sharedModule.$('#add-std-modal'), false);
+        feedbackModule.setElVisible(sharedModule.$('#defaults-modal'), false);
+        service.bindEvents();
+        // 打开网页时自动检测 Yahoo Finance 连通性（不阻塞页面初始化，并行执行）
+        networkModule.runNetworkCheck();
+        try {
+          state.meta = await apiModule.api('/api/meta', { timeout: 30000 });
+        } catch (err) {
+          feedbackModule.toast(`无法连接后端服务：${err.message}`, 'error');
+          sharedModule.$('#month-label').textContent = '连接失败';
+          return;
+        }
+
+        standardsModule.resetStandardsToDefault();
+        state.customLocations = [];
+        state.customCurrencies = {};
+        state.editingDefaults = false;
+        state.defaultsDraft = null;
+        standardsEditorModule.syncStandardsModeUI();
+        const now = new Date();
+        state.year = now.getFullYear();
+        state.month = now.getMonth() + 1;
+
+        let serverBundle = null;
+        try {
+          serverBundle = await apiModule.api('/api/state', { timeout: 15000 });
+        } catch (err) {
+          persistenceModule.runtime.serverStateReady = false;
+          console.warn('读取服务器行程数据失败，回退到本机缓存', err);
+          feedbackModule.toast(`读取项目状态失败：${err.message}。已回退到浏览器缓存；服务器恢复前无法安全保存。`, 'error');
+        }
+        if (serverBundle && typeof serverBundle === 'object' && !Array.isArray(serverBundle)) {
+          persistenceModule.runtime.serverStateReady = true;
+          persistenceModule.applyBundle(serverBundle);
+          persistenceModule.runtime.serverBaseline = sharedModule.deepClone(serverBundle);
+          persistenceModule.writeLocalCache(persistenceModule.snapshotBundle());
+        } else {
+          persistenceModule.runtime.serverStateReady = false;
+          persistenceModule.runtime.serverBaseline = null;
+          persistenceModule.applyBundle(persistenceModule.readLocalBundle());
+        }
+        state.annualYear = new Date().getFullYear();
+
+        monthlyModule.syncOptionsUI();
+        const restoredOverrides = standardsModule.loadOverrides();
+        state.calcResult = resultsModule.loadResultForMonth(monthlyModule.monthKey());
+
+        standardsViewModule.renderStandards();
+        calendarModule.renderLocChips();
+        travelModule.renderTravelPicker();
+        service.renderAll();
+        if (state.calcResult) resultsModule.renderResult();
+        else resultsModule.clearResult();
+        // 默认选中第一个地点，方便直接开始添加行程
+        if (state.meta.locations.length) calendarModule.selectLocation(state.meta.locations[0].key);
+
+        // 提示：恢复本地保存的行程 / 标准修改 / 结果，方便快速回到这个月的数据
+        const itin = itineraryModule.currentItinerary();
+        const hasItinerary = Object.values(itin).some((ranges) => ranges.length > 0);
+        if (restoredOverrides || hasItinerary || state.calcResult) {
+          feedbackModule.toast(
+            `已恢复${state.year}年${state.month}月数据（行程/标准修改/计算选项/结果）`,
+            'info'
+          );
+        }
+        if (Array.isArray(state.meta.warnings) && state.meta.warnings.length) {
+          feedbackModule.toast(state.meta.warnings[0], 'error');
+        }
+      }
+
+      Object.assign(service, {
+        switchTab,
+        renderAll,
+        bindEvents,
+        init,
+      });
+
+      return service;
+    },
+  });
+})(window.BudgetModules || (window.BudgetModules = Object.create(null)));

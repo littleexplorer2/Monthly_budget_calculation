@@ -7,10 +7,9 @@
  */
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const { loadFrontend } = require('./helpers/frontend-loader.js');
 
 function makeEl() {
   return {
@@ -25,8 +24,6 @@ function makeEl() {
 }
 
 function loadAppForTest() {
-  const appPath = path.join(__dirname, '..', 'web', 'js', 'app.js');
-  const source = fs.readFileSync(appPath, 'utf8');
   const storage = new Map();
   // 每个选择器返回同一个元素，便于断言渲染结果（浏览器里也是同一个节点）
   const elements = new Map();
@@ -63,43 +60,47 @@ function loadAppForTest() {
     },
   };
   vm.createContext(context);
-  vm.runInContext(`${source}\n
+  loadFrontend(context);
+  vm.runInContext(`
+    const modules = window.BudgetApp.modules;
+
+
     globalThis.testApi = {
-      state,
-      countStandardsDiffs,
-      monthDiffChip,
-      defaultsDiffChip,
-      rowInputHtml,
-      defaultsDraftDirty,
-      defaultsScope,
-      monthItineraryTravelLocations,
-      renderDefaultsPanel,
-      updateDefaultsScopeHint,
-      openAddStandard,
-      confirmAddStandard,
-      openDefaultsModal,
-      closeDefaultsModal,
-      applyMonthInput,
-      applyDefaultsInput,
-      refreshDefaultsAfterServerChange,
-      saveDefaultStandardsToServer,
-      activeStandardsOverride,
-      persistNow: () => persist('now'),
-      snapshotBundle,
-      applyBundle,
-      loadOverrides,
-      resetStandardsToDefault,
-      restoreDefaultEntry,
-      reconstructDefaultsDraft,
-      renderStandards,
-      syncStandardsModeUI,
-      setApi(mock) { api = mock; },
-      setToast(mock) { toast = mock; },
+      state: modules.state.state,
+      countStandardsDiffs: modules.standardsEditor.countStandardsDiffs,
+      monthDiffChip: modules.standardsEditor.monthDiffChip,
+      defaultsDiffChip: modules.standardsEditor.defaultsDiffChip,
+      rowInputHtml: modules.standardsView.rowInputHtml,
+      defaultsDraftDirty: modules.standardsEditor.defaultsDraftDirty,
+      defaultsScope: modules.standardsView.defaultsScope,
+      monthItineraryTravelLocations: modules.standardsView.monthItineraryTravelLocations,
+      renderDefaultsPanel: modules.standardsView.renderDefaultsPanel,
+      updateDefaultsScopeHint: modules.standardsView.updateDefaultsScopeHint,
+      openAddStandard: modules.standardsEditor.openAddStandard,
+      confirmAddStandard: modules.standardsEditor.confirmAddStandard,
+      openDefaultsModal: modules.standardsEditor.openDefaultsModal,
+      closeDefaultsModal: modules.standardsEditor.closeDefaultsModal,
+      applyMonthInput: modules.standardsEditor.applyMonthInput,
+      applyDefaultsInput: modules.standardsEditor.applyDefaultsInput,
+      refreshDefaultsAfterServerChange: modules.standardsEditor.refreshDefaultsAfterServerChange,
+      saveDefaultStandardsToServer: modules.standardsEditor.saveDefaultStandardsToServer,
+      activeStandardsOverride: modules.standards.activeStandardsOverride,
+      persistNow: () => modules.persistence.persist('now'),
+      snapshotBundle: modules.persistence.snapshotBundle,
+      applyBundle: modules.persistence.applyBundle,
+      loadOverrides: modules.standards.loadOverrides,
+      resetStandardsToDefault: modules.standards.resetStandardsToDefault,
+      restoreDefaultEntry: modules.standardsEditor.restoreDefaultEntry,
+      reconstructDefaultsDraft: modules.standardsEditor.reconstructDefaultsDraft,
+      renderStandards: modules.standardsView.renderStandards,
+      syncStandardsModeUI: modules.standardsEditor.syncStandardsModeUI,
+      setApi(mock) { modules.http.api = mock; },
+      setToast(mock) { modules.feedback.toast = mock; },
       seed() {
         // 该逻辑测试不执行异步 init；显式模拟 GET /api/state 已成功，
         // 否则生产代码会正确地把初始化窗口视为只读。
-        serverStateReady = true;
-        state.meta = {
+        modules.persistence.runtime.serverStateReady = true;
+        modules.state.state.meta = {
           default_standards: {
             variable: { Shenzhen: { CNY: 80 } },
             fixed: { Mainland: { CNY: 64 }, Overseas: { USD: 10 } },
@@ -122,20 +123,20 @@ function loadAppForTest() {
           defaults_customized: true,
           defaults_revision: '0'.repeat(64),
         };
-        state.year = 2026;
-        state.month = 9;
-        state.region = 'Mainland';
-        state.standards = JSON.parse(JSON.stringify(state.meta.default_standards));
-        state.customLocations = [];
-        state.customCurrencies = {};
-        state.monthStandardsSnapshot = false;
-        state.editingDefaults = false;
-        state.defaultsDraft = null;
-        state.defaultsShowAll = false;
-        state.overridesByMonth = {};
-        state.itineraryByMonth = {};
-        state.includeTravel = false;
-        state.travelSelected = null;
+        modules.state.state.year = 2026;
+        modules.state.state.month = 9;
+        modules.state.state.region = 'Mainland';
+        modules.state.state.standards = JSON.parse(JSON.stringify(modules.state.state.meta.default_standards));
+        modules.state.state.customLocations = [];
+        modules.state.state.customCurrencies = {};
+        modules.state.state.monthStandardsSnapshot = false;
+        modules.state.state.editingDefaults = false;
+        modules.state.state.defaultsDraft = null;
+        modules.state.state.defaultsShowAll = false;
+        modules.state.state.overridesByMonth = {};
+        modules.state.state.itineraryByMonth = {};
+        modules.state.state.includeTravel = false;
+        modules.state.state.travelSelected = null;
       },
     };
   `, context);

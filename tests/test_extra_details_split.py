@@ -8,12 +8,14 @@
 预算标准通过 standards_override 的 _snapshot 传入，不依赖 data/defaults.json，
 也不会写任何 data/ 文件。
 """
+import copy
 import unittest
 from unittest import mock
 
 import pandas as pd
 
-import functions
+from core.budget import monthly
+from core.standards import builtin_standards_snapshot, resolve_standards
 
 STANDARDS_SNAPSHOT = {
     "_snapshot": True,
@@ -44,9 +46,10 @@ def _itinerary():
 
 class ExtraDetailsSplitTests(unittest.TestCase):
     def setUp(self):
-        self.result = functions.calculate_travel_budget(
+        self.result = monthly.calculate_travel_budget(
             _itinerary(), "Mainland", 2026, 9,
             standards_override=STANDARDS_SNAPSHOT,
+            standards_snapshot=builtin_standards_snapshot(),
             rates_dict=_rates_dict(),
         )
 
@@ -78,17 +81,53 @@ class ExtraDetailsSplitTests(unittest.TestCase):
         self.assertAlmostEqual(detail_sum, self.result["summary"]["固定费用合计(人民币)"], places=2)
 
     def test_pre_resolved_standards_are_not_resolved_again(self):
-        resolved = functions.resolve_standards(STANDARDS_SNAPSHOT)
+        resolved = resolve_standards(
+            STANDARDS_SNAPSHOT, defaults_snapshot=builtin_standards_snapshot(),
+        )
         with mock.patch.object(
-                functions, "resolve_standards",
+                monthly, "resolve_standards",
                 side_effect=AssertionError("不得二次读取运行时默认值")):
-            result = functions.calculate_travel_budget(
+            result = monthly.calculate_travel_budget(
                 _itinerary(), "Mainland", 2026, 9,
                 standards_override=STANDARDS_SNAPSHOT,
                 rates_dict=_rates_dict(),
                 resolved_standards=resolved,
             )
         self.assertEqual(result["summary"]["总预算(人民币)"], 545.0)
+
+    def test_explicit_default_snapshot_is_used_without_mutating_it(self):
+        snapshot = copy.deepcopy(STANDARDS_SNAPSHOT)
+        before = copy.deepcopy(snapshot)
+        result = monthly.calculate_travel_budget(
+            _itinerary(), "Mainland", 2026, 9,
+            standards_snapshot=snapshot,
+            rates_dict=_rates_dict(),
+        )
+        self.assertEqual(result["summary"]["总预算(人民币)"], 545.0)
+        self.assertEqual(snapshot, before)
+
+    def test_core_cannot_implicitly_read_user_default_standards(self):
+        with self.assertRaisesRegex(ValueError, "显式传入"):
+            monthly.calculate_travel_budget(
+                _itinerary(), "Mainland", 2026, 9,
+                rates_dict=_rates_dict(),
+            )
+
+    def test_core_cannot_implicitly_download_rates(self):
+        with self.assertRaisesRegex(ValueError, "显式传入 rates_dict"):
+            monthly.calculate_travel_budget(
+                _itinerary(), "Mainland", 2026, 9,
+                standards_snapshot=STANDARDS_SNAPSHOT,
+            )
+
+    def test_invalid_month_is_rejected_even_with_explicit_rates(self):
+        for month in (0, 13):
+            with self.subTest(month=month), self.assertRaises(ValueError):
+                monthly.calculate_travel_budget(
+                    _itinerary(), "Mainland", 2026, month,
+                    standards_snapshot=STANDARDS_SNAPSHOT,
+                    rates_dict=_rates_dict(),
+                )
 
 
 if __name__ == "__main__":

@@ -2,13 +2,49 @@
 
 本文件适用于 `每月预算/` 及其子目录，只补充上层规则。
 
-## 项目边界与模块职责
+## 项目边界与三层结构
 
 - 本项目是仅供本机使用的多币种预算 Web 工具，须兼容 Windows 与 macOS，源码、JSON 和页面文案统一使用 UTF-8；默认只监听 `127.0.0.1`，不要恢复命令行版。
-- `functions.py` 是月度与年度预算、预算标准、汇率下载和进程内缓存的唯一计算层；不得在 API 或前端复制计算公式。
-- `main_web.py` 负责 FastAPI 请求模型、边界校验、持久化、汇率磁盘缓存、标签页生命周期和静态文件服务。
-- `web/` 是无构建步骤的原生 HTML/CSS/JS 前端；`web/js/app.js` 负责界面状态和唯一持久化管线，不要直接修改 `web/vendor/echarts.min.js`。
+- 生产实现固定分为 `core/` 底层、`application/` 应用层、`web/` 前端。每个职责模块必须放在独立文件夹中；新增功能先确定唯一所属模块，再通过公开接口调用。
+- Python 模块用 `__init__.py` 明确导出公开接口，实现放在模块内部文件；跨模块只能导入包入口，不能导入对方的 `service.py` 等内部实现。测试可以导入实际实现以替换 I/O 边界。
+- `main_web.py` 只保留 Web 启动与 ASGI 兼容入口；`functions.py` 只保留旧公开接口转发及参数编排，不得重新添加公式、缓存或业务状态。生产模块不得反向导入这两个兼容入口。
+- `web/` 继续使用无构建步骤的原生 HTML/CSS/JS；不得直接修改 `web/vendor/echarts.min.js`。
 - `data/` 保存用户真实状态、用户默认标准和汇率缓存，不是测试夹具。
+
+### 底层 `core/`
+
+- `standards/`：`builtin.py` 是出厂标准唯一来源；标准校验、快照解析和合并归本模块。
+- `budget/`：`monthly.py`、`annual.py` 是预算公式唯一实现，接收显式标准和汇率；不得读取用户文件、发网络请求或导入应用层。
+- `rates/`：月度与年度行情规范化、Yahoo 下载适配和进程内缓存；不同行情语义必须保持分离。
+- `storage/`：JSON 严格读取和跨平台原子写基础设施，不决定用户文件路径或应用状态策略。
+- 底层不得依赖 `application/`、`web/`、FastAPI 或请求模型；底层模块之间也必须通过公开入口调用。
+
+### 应用层 `application/`
+
+- `config/`：项目根、数据和前端目录的唯一定位来源，不依赖启动工作目录。
+- `contracts/`：请求模型、应用错误和日期边界。
+- `defaults/`：用户默认标准读写、修订校验、锁和运行时快照。
+- `metadata/`：展示名称、元数据以及保存/恢复默认标准的用例。
+- `rates/`：月度磁盘缓存、并发取汇率、年度取 Close、网络检测及缓存管理用例。
+- `budget/`：解析标准、展开行程、获取汇率并调用底层月度/年度计算，不复制公式。
+- `state/`：状态兼容、合并、并发冲突与顺序控制，以及唯一服务端状态写入管线。
+- `repository/`：用户触发的数据上传用例与 Git 调用。
+- `lifecycle/`：标签页注册、心跳租约和退出前写入协调。
+- `api/`：HTTP 路由、错误映射及静态文件挂载；路由只委托对应应用模块。
+- `startup/`：启动参数、控制台输出、浏览器打开和 Uvicorn 启动。
+- 应用模块允许调用底层及必要的同层公开接口，禁止静态循环依赖；HTTP 装配不能成为其它业务模块的依赖。
+
+### 前端 `web/`
+
+- `state/` 持有唯一界面状态；`persistence/` 持有唯一写队列、服务端基线和本地镜像；所有月度及年度状态变化均接入此管线。
+- `http/` 统一 HTTP 调用；`shared/` 提供通用格式与 DOM 辅助；`feedback/` 处理提示；`locations/` 提供地点和币种展示查询。
+- `standards/` 管理标准快照；`standards-editor/` 管理编辑及默认值操作；`standards-view/` 管理标准视图。
+- `itinerary/` 管理行程；`calendar/` 管理日历视图；`travel/` 管理旅居选择。
+- `rates/` 管理月度汇率图表；`monthly/` 协调月度计算；`results/` 展示结果；`annual/` 管理独立年度预算；`analysis/` 展示月份比较。
+- `data/` 管理数据操作界面；`network/` 管理网络提示；`lifecycle/` 管理标签页心跳；`shell/` 管理页面事件和初始化。
+- 各模块以 `index.js` 注册隔离工厂、声明 `dependencies` 并导出本模块接口。`web/js/app.js` 只分配接口、注入依赖和启动；不得恢复共享全局函数或用动态执行拼接业务脚本。
+- 界面回调允许显式双向引用，但必须在所有模块装配完成后调用。前端仅通过 HTTP 访问应用层，不复制预算公式或直接操作磁盘。
+- `index.html` 负责静态装载，`css/` 放共享样式，`vendor/` 放第三方资源。模块新增或改名时同步页面脚本、组装入口、测试加载器及 `tests/architecture/frontend-manifest.js`。
 
 ## 计算契约
 
@@ -26,13 +62,14 @@
 
 ## 验证
 
-- Python：`python -m py_compile functions.py main_web.py`，再运行 `python -m unittest discover -s tests -p "test_*.py"`。
-- 前端：运行 `node --check web/js/app.js`，并分别运行 `node tests/app_state_persistence.test.js`、`node tests/standards_defaults_editing.test.js`、`node tests/defaults_modal_input.test.js` 和 `node tests/result_details_split.test.js`；新增前端测试也须直接执行，不要使用会在受限环境中额外派生进程的 `node --test` 聚合方式。
+- 首选 `python tests/run_checks.py`：在项目内 `.scratch/` 建立不含真实数据的临时副本，执行 Python 编译、全部 Python 回归、前端模块语法检查及逐个 Node 回归；`--browser` 加上独立浏览器检查。使用装有 `requirements.txt` 依赖的解释器（Windows 项目虚拟环境为 `.venv/Scripts/python.exe`）。
+- 手动验证也必须满足数据边界：在临时副本中执行 `python -m py_compile functions.py main_web.py`、`python -m compileall -q core application`、`python -m unittest discover -s tests -p "test_*.py"`；对全部自有前端 JS 执行 `node --check`，并逐个执行 `tests/*.test.js`，不要用 `node --test` 聚合方式。
+- `tests/architecture/manifest.py` 与 `frontend-manifest.js` 分别是 Python 和前端模块清单；架构门禁检查目录入口、跨层和跨模块依赖、Python 静态环、前端声明及装配。前端门禁单独执行命令为 `node tests/architecture/frontend.test.js`，隔离运行器已包含。新增模块须同步清单和本文件职责路由，不能绕过门禁。
 - 汇率测试使用固定夹具覆盖交易日、周末、跨年、空数据和 `as_of` 边界；年度测试必须断言只取 `Close` 且不补非交易日。
 - 完成后运行 `git diff --check`。缺少 Python、Node、网络或真实浏览器时，明确列出未运行和未验证部分，不得宣称通过。
 
 ## 文档路由
 
 - `README.md` 是安装、使用、用户可见能力、限制和 API 的唯一说明；行为、接口、状态结构或启动参数变化时同步更新。
-- 运行时出厂默认值以 `functions.py` 的内建配置为准，用户覆盖以 `data/defaults.json` 为准；不要在本文件复制具体金额。
+- 运行时出厂默认值以 `core/standards/builtin.py` 为准，用户覆盖以 `data/defaults.json` 为准；不要在本文件复制具体金额。
 - 计划与待办、验证证据、手工或长时操作分别写入专门的计划、验证报告和操作文档，不在 `AGENTS.md` 记录进度、bug 历史或某次运行结果。

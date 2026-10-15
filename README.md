@@ -18,7 +18,7 @@
 `(Open + Close) / 2`；再对齐到所选月份的每个自然日。周末、节假日等缺失日使用最近可用值，
 当前月尚未发生的日期使用本月至截至日的日均汇率估算。CNY 对人民币的汇率恒为 1。
 
-默认预算标准以运行时页面和 `GET /api/meta` 返回值为准：`functions.py` 提供出厂配置；若存在
+默认预算标准以运行时页面和 `GET /api/meta` 返回值为准：`core/standards/builtin.py` 提供出厂配置；若存在
 `data/defaults.json` 且文件校验通过，则使用用户在「⚙ 默认预算标准」中保存的覆盖值；损坏文件会在页面明确提示，
 不会被当作空配置覆盖。README 不重复维护具体金额。
 
@@ -47,7 +47,7 @@
 4. **两个互不影响的区域**：当月标准直接显示在「预算标准」页，服务器默认标准放在顶栏的弹窗里。
    - **当月预算标准**（「预算标准」页，随月份切换，标题显示当前年月）：金额改动只影响本月，
      写入 `data/app-state.json` 的当月覆盖项；提供「**恢复默认**」（本月改回当前默认值）和
-     「**恢复出厂默认**」（删除 `data/defaults.json`，恢复 `functions.py` 出厂值，**不改动本月数值**）。
+     「**恢复出厂默认**」（删除 `data/defaults.json`，恢复 `core/standards/builtin.py` 出厂值，**不改动本月数值**）。
    - **服务器默认预算标准**（顶栏「**⚙ 默认预算标准**」按钮，就在「计算预算」左边，点击弹出界面）：
      弹窗内直接编辑默认值，点「**保存默认标准**」写入 `data/defaults.json`（新月份使用；保存不会改动当月），
      或点「**放弃修改**」丢弃草稿；✕ 或点击遮罩关闭，有未保存改动时会先询问。
@@ -160,64 +160,94 @@ git push
 
 ## 测试
 
+推荐使用项目虚拟环境中的 Python 运行隔离检查（需 Node.js 18+）：
+
 ```bash
-# 前端回归测试（需 Node.js 18+；逐个直接执行，不依赖浏览器或 jsdom）
-node tests/app_state_persistence.test.js
-node tests/standards_defaults_editing.test.js
-node tests/defaults_modal_input.test.js
-node tests/result_details_split.test.js
-node tests/annual_budget_ui.test.js
-node tests/monthly_async_races.test.js
-node tests/result_stale_and_delete_rollback.test.js
-# 真实浏览器布局 smoke（独立临时 profile；环境允许时运行）
-node tests/annual_layout_browser.test.js
-# 后端回归测试
-python -m unittest discover -s tests -p "test_*.py"
-# 语法检查
-node --check web/js/app.js
-python -m py_compile functions.py main_web.py
+python tests/run_checks.py
+# 可用真实浏览器时，同时检查桌面与手机布局
+python tests/run_checks.py --browser
 ```
 
-完整验证边界和浏览器安全要求见 `AGENTS.md`。前端交互测试使用项目自带的
-`tests/helpers/dom-stub.js`；确需真实渲染时使用 `tests/helpers/browser-probe.js`，不要操作用户已有的浏览器进程。
+Windows 可直接使用 `.venv/Scripts/python.exe tests/run_checks.py`。运行器在项目内
+`.scratch/` 创建临时源码副本，**不复制真实 `data/`**；测试中的状态写入、默认值恢复、
+删除和模拟 Git 上传都发生在该副本或其临时目录内，完成后自动清理。
+它会执行 Python 编译、全部 `test_*.py`、所有自有前端模块的语法检查，并逐个运行
+`tests/*.test.js`，其中包含架构门禁和原有月度、年度、默认值及持久化回归。
+`--browser` 使用独立临时浏览器配置和固定 API 夹具，不访问真实 Yahoo 行情；
+浏览器不可用时会明确显示跳过，不能视为真实浏览器验证通过。
+
+针对性检查的命令和只读数据边界见 `AGENTS.md`。前端 DOM 测试使用
+`tests/helpers/dom-stub.js` 和 `frontend-loader.js`，按生产 HTML 加载实际模块，
+不需要 jsdom 或构建工具。真实浏览器探针只回收自己启动的进程。
 
 ## 目录结构
 
-```
+```text
 每月预算/
-├── AGENTS.md           # 项目边界、计算契约、数据安全与验证入口
-├── VALIDATION.md       # 已完成修复的验证证据与环境限制
-├── main_requirement.py # 一键安装 requirements.txt 中的全部依赖
-├── main_web.py         # FastAPI 后端、状态持久化和月度/年度汇率接口
-├── functions.py        # 月度/年度计算引擎与出厂默认标准（启动时可能被 defaults.json 覆盖）
-├── data/
-│   ├── app-state.json  # 月度行程/选项/覆盖/结果，以及按年份保存的全年输入和结果
-│   ├── defaults.json   # 用户保存的默认预算标准（「保存默认标准」生成）
-│   └── rates/          # 月度汇率磁盘缓存；年度 Close 不写入这里
-├── web/                # 前端（原生 HTML/CSS/JS，无构建步骤）
-│   ├── index.html
-│   ├── css/style.css
-│   ├── js/app.js
-│   └── vendor/echarts.min.js   # ECharts 5.6（本地化，无需外网 CDN）
-├── tests/              # 月度/年度计算界面、状态持久化和数据上传回归测试
-│   ├── app_state_persistence.test.js
-│   ├── annual_budget_ui.test.js
-│   ├── annual_layout_browser.test.js
-│   ├── monthly_async_races.test.js
-│   ├── result_stale_and_delete_rollback.test.js
-│   ├── standards_defaults_editing.test.js
-│   ├── defaults_modal_input.test.js
-│   ├── result_details_split.test.js
-│   ├── helpers/dom-stub.js       # 测试用的极简 DOM（无 jsdom / 浏览器依赖）
-│   ├── helpers/browser-probe.js  # 一次性 headless 浏览器探针（只回收自己启动的进程）
-│   ├── test_annual_backend.py
-│   ├── test_defaults_atomicity.py
-│   ├── test_extra_details_split.py
-│   ├── test_rates_delete.py
-│   ├── test_tab_lifecycle.py
-│   └── test_repository_upload.py
+├── AGENTS.md             # 三层模块职责、调用边界与验证规则
+├── VALIDATION.md         # 验证证据和环境限制
+├── main_requirement.py   # 依赖安装入口
+├── main_web.py           # 保留原启动命令及 ASGI app 导出
+├── functions.py          # 旧 Python 公开接口的兼容转发
+├── core/                 # 底层：各目录通过 __init__.py 公开接口
+│   ├── standards/        # 出厂配置与纯标准解析
+│   ├── budget/           # 月度、年度预算公式
+│   ├── rates/            # 行情规范化、下载和进程缓存
+│   └── storage/          # JSON 读取及原子写
+├── application/          # 应用层：各目录通过 __init__.py 公开接口
+│   ├── config/           # 项目路径
+│   ├── contracts/        # 请求模型、错误和日期边界
+│   ├── defaults/         # 用户默认标准持久化
+│   ├── metadata/         # 元数据及默认值操作用例
+│   ├── rates/            # 汇率用例与磁盘缓存
+│   ├── budget/           # 月度、年度及旧调用方式的编排
+│   ├── state/            # 服务端唯一状态持久化管线
+│   ├── repository/       # 数据上传用例
+│   ├── lifecycle/        # 标签页租约与退出协调
+│   ├── api/              # HTTP 路由和静态服务装配
+│   └── startup/          # 启动参数和本机服务启动
+├── web/                  # 前端：每个功能目录以 index.js 提供隔离工厂
+│   ├── index.html        # 按顺序加载模块
+│   ├── js/app.js         # 唯一组装和启动入口
+│   ├── state/            # 唯一界面状态
+│   ├── persistence/      # 唯一保存队列与缓存镜像
+│   ├── http/             # HTTP 客户端
+│   ├── shared/           # 通用格式及 DOM 辅助
+│   ├── feedback/         # 操作提示
+│   ├── locations/        # 地点和币种展示查询
+│   ├── standards/        # 标准快照
+│   ├── standards-editor/ # 标准编辑与默认值操作
+│   ├── standards-view/   # 标准视图
+│   ├── itinerary/        # 行程数据
+│   ├── calendar/         # 月历视图
+│   ├── travel/           # 旅居选择
+│   ├── rates/            # 汇率图表
+│   ├── monthly/          # 月度计算
+│   ├── results/          # 结果明细
+│   ├── annual/           # 年度预算
+│   ├── analysis/         # 月份比较
+│   ├── data/             # 数据管理界面
+│   ├── network/          # 网络提示
+│   ├── lifecycle/        # 标签页心跳
+│   ├── shell/            # 页面事件及初始化
+│   ├── css/              # 共享样式
+│   └── vendor/           # 第三方资源
+├── data/                 # 真实用户数据，不是测试夹具
+│   ├── app-state.json    # 月度及年度独立状态
+│   ├── defaults.json     # 用户默认标准
+│   └── rates/            # 月度汇率磁盘缓存
+├── tests/                # 架构、调用链、计算、状态和界面回归
+│   ├── architecture/     # 可执行模块清单和依赖检查
+│   ├── helpers/          # 生产前端加载器、DOM 桩、浏览器探针
+│   └── run_checks.py     # 隔离副本检查入口
 └── requirements.txt
 ```
+
+调用方向为浏览器前端 → HTTP → 应用用例 → 底层公开接口。
+应用层负责 I/O 编排，底层预算计算只接受明确的标准和汇率输入；模块职责和依赖规则
+以 `AGENTS.md` 为准，自动化门禁阻止反向导入、跨模块访问实现文件和 Python 静态环。
+页面工厂通过声明的依赖接口互相调用，所有模块装配完成后才启动事件与心跳。
+现有启动参数、API 地址、页面入口和用户 JSON 结构保持兼容。
 
 ## 接口一览
 
@@ -246,12 +276,11 @@ python -m py_compile functions.py main_web.py
 
 ## 设计与工程说明
 
-- **单一计算层**：月度 `calculate_travel_budget` 与年度 `calculate_annual_budget` 都在 `functions.py`；
-  Web 层负责请求校验、汇率获取和调用，不复制计算公式。月度计算可通过
-  `standards_override` / `rates_dict` 传入本次预算标准与已缓存汇率；
-  `resolve_standards` 支持通过 `custom_locations` 新建地点、为区域新增固定币种、
-  以及额外预算（CNY/USD/HKD），并返回地点注册表用于行程校验与币种映射。
-  用户默认标准保存在 `data/defaults.json`，启动时覆盖模块级字典，不改写 `functions.py` 源码。
+- **单一计算层**：月度 `calculate_travel_budget` 与年度 `calculate_annual_budget` 位于 `core/budget/`。
+  `application/budget/` 负责请求用例、标准快照、行程展开和汇率获取，不复制公式；底层计算
+  不读取默认值文件，也不主动下载汇率。`core/standards/` 负责自定义地点、固定币种与额外预算
+  的标准解析；`application/defaults/` 管理 `data/defaults.json`，不改写出厂配置。
+  外部旧代码仍可通过 `functions.py` 调用原公开函数，新功能应使用所属模块的公开入口。
 - **年度管线独立**：年度下载器只提取实际交易日 `Close`，不调用月度 `(Open + Close) / 2`
   与日历日填充逻辑；年度行情使用独立进程内缓存，不写入 `data/rates/`。年度输入和紧凑结果
   分别写入 `annualBudgetsByYear` / `annualResultsByYear`，原始行情序列不进入应用状态。

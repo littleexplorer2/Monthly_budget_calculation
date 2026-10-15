@@ -1,14 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const { loadFrontend } = require('./helpers/frontend-loader.js');
 
 function loadAppForTest() {
-  const appPath = path.join(__dirname, '..', 'web', 'js', 'app.js');
-  const source = fs.readFileSync(appPath, 'utf8');
   const storage = new Map();
   const keepaliveCalls = [];
   const windowListeners = new Map();
@@ -45,58 +42,62 @@ function loadAppForTest() {
     },
   };
   vm.createContext(context);
-  vm.runInContext(`${source}\n
+  loadFrontend(context);
+  vm.runInContext(`
+    const modules = window.BudgetApp.modules;
+
+
     globalThis.testApi = {
-      deleteMonth: deleteMonthData,
-      flush: flushPersist,
-      unregister: unregisterTab,
-      heartbeat: heartbeatTab,
-      uploadAll: uploadAllData,
+      deleteMonth: modules.data.deleteMonthData,
+      flush: modules.persistence.flushPersist,
+      unregister: modules.lifecycle.unregisterTab,
+      heartbeat: modules.lifecycle.heartbeatTab,
+      uploadAll: modules.data.uploadAllData,
       seed(month) {
-        serverStateReady = true;
-        state.meta = {
+        modules.persistence.runtime.serverStateReady = true;
+        modules.state.state.meta = {
           default_standards: { variable: {}, fixed: {}, travel: {}, extra: {} },
           locations: [],
           location_names: {},
           currency_names: {},
         };
-        state.year = 2026;
-        state.month = 9;
-        state.itineraryByMonth = { [month]: { Shenzhen: [{ start: month + '-01', end: month + '-02' }] } };
-        state.optionsByMonth = { [month]: { region: 'Mainland' } };
-        state.overridesByMonth = { [month]: { fixed: { Mainland: { CNY: 1 } } } };
-        state.resultsByMonth = { [month]: { summary: { total: 1 } } };
+        modules.state.state.year = 2026;
+        modules.state.state.month = 9;
+        modules.state.state.itineraryByMonth = { [month]: { Shenzhen: [{ start: month + '-01', end: month + '-02' }] } };
+        modules.state.state.optionsByMonth = { [month]: { region: 'Mainland' } };
+        modules.state.state.overridesByMonth = { [month]: { fixed: { Mainland: { CNY: 1 } } } };
+        modules.state.state.resultsByMonth = { [month]: { summary: { total: 1 } } };
       },
       setApi(mock) {
-        api = mock;
-        openDataManager = async () => {};
-        toast = () => {};
+        modules.http.api = mock;
+        modules.data.openDataManager = async () => {};
+        modules.feedback.toast = () => {};
       },
       setBeacon(mock) {
         navigator.sendBeacon = mock;
       },
       setServerBaseline(bundle) {
-        serverBaseline = JSON.parse(JSON.stringify(bundle));
-        serverStateReady = true;
+        modules.persistence.runtime.serverBaseline = JSON.parse(JSON.stringify(bundle));
+        modules.persistence.runtime.serverStateReady = true;
       },
       touchMonthlyState() {
-        persist('debounce');
+        modules.persistence.persist('debounce');
       },
       markServerReadFailed() {
-        serverStateReady = false;
-        serverBaseline = null;
+        modules.persistence.runtime.serverStateReady = false;
+        modules.persistence.runtime.serverBaseline = null;
       },
       isServerStateReady() {
-        return serverStateReady;
+        return modules.persistence.runtime.serverStateReady;
       },
       setResultTotal(month, total) {
-        state.resultsByMonth[month].summary.total = total;
+        modules.state.state.resultsByMonth[month].summary.total = total;
       },
       buildWrite(bundle) {
-        return buildStateWrite(bundle);
+        return modules.persistence.buildStateWrite(bundle);
       },
-      applyBundle,
-      snapshot: snapshotBundle,
+      applyBundle: modules.persistence.applyBundle,
+      snapshot: modules.persistence.snapshotBundle,
     };
   `, context);
   return {

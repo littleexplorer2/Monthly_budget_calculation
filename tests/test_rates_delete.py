@@ -1,3 +1,6 @@
+from application.contracts import service as contracts_service
+from application.rates import service as rates_service
+import core.rates as core_rates
 # -*- coding: utf-8 -*-
 """汇率缓存删除接口的边界校验回归测试。
 
@@ -9,8 +12,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import functions
-import main_web
 
 
 class RateCacheDeleteValidationTests(unittest.TestCase):
@@ -33,12 +34,12 @@ class RateCacheDeleteValidationTests(unittest.TestCase):
                 valid_file.write_text("{}", encoding="utf-8")
 
                 with (
-                    mock.patch.object(main_web, "RATES_DATA_DIR", rates_dir),
-                    mock.patch.object(functions, "purge_rates_cache") as purge,
+                    mock.patch.object(rates_service, "RATES_DATA_DIR", rates_dir),
+                    mock.patch.object(core_rates, "purge_rates_cache") as purge,
                 ):
                     with self.assertRaisesRegex(ValueError, message):
-                        main_web.api_data_rates_delete(
-                            main_web.MonthListIn(months=["2026-08", invalid])
+                        rates_service.api_data_rates_delete(
+                            contracts_service.MonthListIn(months=["2026-08", invalid])
                         )
 
                 self.assertTrue(valid_file.exists())
@@ -52,11 +53,11 @@ class RateCacheDeleteValidationTests(unittest.TestCase):
                 (rates_dir / f"{month}.json").write_text("{}", encoding="utf-8")
 
             with (
-                mock.patch.object(main_web, "RATES_DATA_DIR", rates_dir),
-                mock.patch.object(functions, "purge_rates_cache") as purge,
+                mock.patch.object(rates_service, "RATES_DATA_DIR", rates_dir),
+                mock.patch.object(core_rates, "purge_rates_cache") as purge,
             ):
-                result = main_web.api_data_rates_delete(
-                    main_web.MonthListIn(months=["2000-01", "2100-12"])
+                result = rates_service.api_data_rates_delete(
+                    contracts_service.MonthListIn(months=["2000-01", "2100-12"])
                 )
 
             self.assertEqual(result, {"removed": ["2000-01", "2100-12"], "months": []})

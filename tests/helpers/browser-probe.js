@@ -26,7 +26,6 @@
 
 const fs = require('node:fs');
 const net = require('node:net');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
@@ -91,7 +90,10 @@ async function launchProbeBrowser(options = {}) {
   const browserPath = options.browserPath === undefined ? findBrowser() : options.browserPath;
   const headless = options.headless === undefined ? true : options.headless;
   const debugPort = options.debugPort === undefined ? await findFreePort() : options.debugPort;
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-browser-probe-'));
+  // 探针产物始终留在当前测试项目内，临时项目副本也不会写入用户配置目录。
+  const profileRoot = path.resolve(__dirname, '..', '..', '.scratch', 'browser-profiles');
+  fs.mkdirSync(profileRoot, { recursive: true });
+  const profile = fs.mkdtempSync(path.join(profileRoot, 'budget-browser-probe-'));
 
   const args = [
     ...(headless ? ['--headless=new'] : []),

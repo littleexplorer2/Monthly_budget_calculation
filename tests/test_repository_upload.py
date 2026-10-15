@@ -1,10 +1,10 @@
+from application.repository import service as repository_service
 import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-import main_web
 
 
 def run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -46,7 +46,7 @@ class RepositoryUploadTests(unittest.TestCase):
             other_file.write_text("keep staged", encoding="utf-8")
             run_git(root, "add", "--", "other.txt")
 
-            result = main_web._upload_data_to_remote(project)
+            result = repository_service._upload_data_to_remote(project)
 
             self.assertTrue(result["uploaded"])
             self.assertTrue(result["committed"])

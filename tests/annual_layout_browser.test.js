@@ -35,6 +35,8 @@ function annualRates(year) {
 }
 
 function appState(year) {
+  // 布局夹具中的已保存结果与本次行情使用同一观测数量，避免正确的过期检测清空总额。
+  const rateStats = annualRates(year).stats;
   const monthly = (month, total, region, includeTravel) => ({
     summary: {
       '计算月份': `${year}年${Number(month)}月`,
@@ -67,8 +69,8 @@ function appState(year) {
         observed_through: `${year}-09-25`,
         summary: { '全年预算合计(人民币)': 4561.73 },
         details: [
-          { currency: 'CNY', amount: 1000, average_rate: 1, cny_amount: 1000 },
-          { currency: 'USD', amount: 500, average_rate: 7.123456, cny_amount: 3561.73 },
+          { currency: 'CNY', amount: 1000, average_rate: 1, observation_count: rateStats.CNY.observation_count, cny_amount: 1000 },
+          { currency: 'USD', amount: 500, average_rate: 7.123456, observation_count: rateStats.USD.observation_count, cny_amount: 3561.73 },
         ],
         errors: {},
       },

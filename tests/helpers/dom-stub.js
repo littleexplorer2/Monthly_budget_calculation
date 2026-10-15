@@ -12,6 +12,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { loadFrontend } = require('./frontend-loader.js');
 
 const VOID_TAGS = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'source', 'area', 'base', 'col', 'embed', 'track', 'wbr']);
 
@@ -481,7 +482,6 @@ function defaultStateFixture() {
 function createApp(options = {}) {
   const root = path.join(__dirname, '..', '..');
   const indexHtml = fs.readFileSync(path.join(root, 'web', 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(root, 'web', 'js', 'app.js'), 'utf8');
 
   const meta = cloneJson(options.meta || defaultMetaFixture());
   const initialState = cloneJson(options.state || defaultStateFixture());
@@ -607,14 +607,17 @@ function createApp(options = {}) {
     encodeURIComponent,
     decodeURIComponent,
   });
-  vm.runInContext(`${source}
+  loadFrontend(context);
+  vm.runInContext(`
+    const modules = window.BudgetApp.modules;
+
     globalThis.app = {
-      state, init, renderStandards, refreshRowChip, applyDefaultsInput, applyMonthInput,
-      renderResult, clearResult, splitFixedExtraDetails,
-      renderAnnualBudget, loadAnnualRates, calculateAnnualBudget, invalidateAnnualResult,
-      annualBudgetAmounts, annualCurrencies, snapshotBundle, applyBundle, switchTab,
-      collectAnalysisMonths, markCurrentResultStale, addRange, deleteMonthData,
-      loadRates, calculate, changeMonth,
+      state: modules.state.state, init: modules.shell.init, renderStandards: modules.standardsView.renderStandards, refreshRowChip: modules.standardsEditor.refreshRowChip, applyDefaultsInput: modules.standardsEditor.applyDefaultsInput, applyMonthInput: modules.standardsEditor.applyMonthInput,
+      renderResult: modules.results.renderResult, clearResult: modules.results.clearResult, splitFixedExtraDetails: modules.results.splitFixedExtraDetails,
+      renderAnnualBudget: modules.annual.renderAnnualBudget, loadAnnualRates: modules.annual.loadAnnualRates, calculateAnnualBudget: modules.annual.calculateAnnualBudget, invalidateAnnualResult: modules.annual.invalidateAnnualResult,
+      annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyBundle, switchTab: modules.shell.switchTab,
+      collectAnalysisMonths: modules.analysis.collectAnalysisMonths, markCurrentResultStale: modules.results.markCurrentResultStale, addRange: modules.itinerary.addRange, deleteMonthData: modules.data.deleteMonthData,
+      loadRates: modules.rates.loadRates, calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth,
     };
   `, context, { filename: 'app.js' });
 
