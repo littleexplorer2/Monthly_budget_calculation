@@ -444,6 +444,7 @@ function defaultMetaFixture() {
     ],
     regions: [{ key: 'Mainland', name: '内地' }, { key: 'Overseas', name: '境外' }],
     currencies: ['CNY', 'HKD', 'USD', 'TWD', 'THB'],
+    currency_priority: ['CNY', 'HKD', 'USD'],
     currency_names: {
       CNY: '人民币', HKD: '港币', USD: '美元', TWD: '新台币', THB: '泰铢',
     },
@@ -504,7 +505,7 @@ function createApp(options = {}) {
     navigator: { sendBeacon: () => true, userAgent: 'test' },
     crypto: { randomUUID: () => 'test-tab' },
     addEventListener: () => {},
-    confirm: () => (typeof options.confirm === 'function' ? options.confirm() : true),
+    confirm: (...args) => (typeof options.confirm === 'function' ? options.confirm(...args) : true),
     fetch: async (url, fetchOptions = {}) => {
       const u = String(url);
       calls.push(u);
@@ -582,7 +583,11 @@ function createApp(options = {}) {
     fetch: win.fetch,
     confirm: win.confirm,
     echarts: {
-      init: () => ({ setOption: () => {}, dispose: () => {}, resize: () => {} }),
+      init: (host) => ({
+        setOption: (option) => { host.__chartOption = option; },
+        dispose: () => { host.__chartOption = null; },
+        resize: () => {},
+      }),
     },
     setTimeout,
     clearTimeout,
@@ -615,11 +620,18 @@ function createApp(options = {}) {
       state: modules.state.state, init: modules.shell.init, renderStandards: modules.standardsView.renderStandards, refreshRowChip: modules.standardsEditor.refreshRowChip, applyDefaultsInput: modules.standardsEditor.applyDefaultsInput, applyMonthInput: modules.standardsEditor.applyMonthInput,
       renderResult: modules.results.renderResult, clearResult: modules.results.clearResult, splitFixedExtraDetails: modules.results.splitFixedExtraDetails,
       renderAnnualBudget: modules.annual.renderAnnualBudget, loadAnnualRates: modules.annual.loadAnnualRates, calculateAnnualBudget: modules.annual.calculateAnnualBudget, invalidateAnnualResult: modules.annual.invalidateAnnualResult,
-      annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyBundle, switchTab: modules.shell.switchTab,
+      annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyBundle, switchTab: modules.shell.switchTab, openSection: modules.navigation.openSection,
       collectAnalysisMonths: modules.analysis.collectAnalysisMonths, markCurrentResultStale: modules.results.markCurrentResultStale, addRange: modules.itinerary.addRange, deleteMonthData: modules.data.deleteMonthData,
       loadRates: modules.rates.loadRates, calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth,
     };
   `, context, { filename: 'app.js' });
+
+  // Most focused DOM tests control calculations explicitly. Production startup keeps
+  // automatic updates enabled; a test opts into that path with autoCalculations=true.
+  if (!options.autoCalculations) {
+    const init = context.app.init;
+    context.app.init = () => init({ skipAutomaticUpdates: true });
+  }
 
   return { doc, app: context.app, meta, calls, requests, storage };
 }

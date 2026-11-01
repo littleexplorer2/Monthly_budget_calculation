@@ -10,6 +10,7 @@ from .service import (
     _disk_currency_cache_is_fresh as disk_currency_cache_is_fresh,
     _series_from_disk as series_from_disk,
     _fetch_rates_parallel as fetch_rates_parallel,
+    _fetch_budget_rates as fetch_budget_rates,
     _series_stats as series_stats,
     _rates_payload as rates_payload,
     _fetch_annual_close_rates as fetch_annual_close_rates,

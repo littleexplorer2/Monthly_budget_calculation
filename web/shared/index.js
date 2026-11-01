@@ -10,7 +10,7 @@
       // 地点差异化配色（定居/旅居各地点颜色差别大，便于日历/列表/芯片区分）
       const LOC_COLORS = ['#2563eb', '#16a34a', '#ea580c', '#9333ea', '#0891b2', '#dc2626'];
 
-      const EXTRA_CURRENCIES = ['CNY', 'USD', 'HKD'];
+      const EXTRA_CURRENCIES = ['CNY', 'HKD', 'USD'];
 
       // 额外预算固定币种，默认金额均为 0
 

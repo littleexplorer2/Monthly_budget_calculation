@@ -105,19 +105,6 @@
         if (countEl) countEl.textContent = String(rows.length);
         if (totalEl) totalEl.textContent = `¥ ${sharedModule.fmtMoney(total)}`;
         if (averageEl) averageEl.textContent = `¥ ${sharedModule.fmtMoney(rows.length ? total / rows.length : 0)}`;
-        resultsModule.buildTable(
-          sharedModule.$('#analysis-data-table'),
-          ['月份', '总预算（人民币）', '区域', '旅居'],
-          rows.map((row) => [
-            row.label,
-            sharedModule.fmtMoney(row.amount),
-            row.region === 'Overseas' ? '境外' : '内地',
-            row.includeTravel ? '含旅居' : '不含旅居',
-          ]),
-          [1],
-          { empty: '当前筛选下没有已计算的月份' },
-        );
-
         const showRegion = !filters.hideRegionAnno;
         const showTravel = !filters.hideTravelAnno;
 
@@ -142,7 +129,7 @@
           if (empty) {
             empty.textContent = all.length
               ? '当前时间段或标签下没有月份。请调整筛选后再试。'
-              : '还没有可绘制的月份。请先在各月添加行程并点击「计算预算」，本页会自动读取已保存结果。';
+              : '还没有可绘制的月份。请先在各月添加行程并更新预算，本页会自动读取已保存结果。';
           }
           return;
         }
@@ -165,6 +152,9 @@
         state.analysisChart.setOption({
           tooltip: {
             trigger: 'axis',
+            backgroundColor: 'rgba(12, 20, 28, 0.94)',
+            borderColor: 'rgba(255,255,255,0.14)',
+            textStyle: { color: '#f4f8fb' },
             formatter: (params) => {
               const p = params && params[0];
               if (!p) return '';
@@ -181,24 +171,24 @@
           xAxis: {
             type: 'category',
             data: rows.map((m) => m.key),
+            axisLine: { lineStyle: { color: '#3a4b59' } },
+            axisTick: { lineStyle: { color: '#3a4b59' } },
             axisLabel: {
               interval: 0,
               hideOverlap: true,
-              formatter: (value, idx) => {
-                const row = rows[idx];
-                const title = row ? row.label : service.monthKeyToLabel(value);
-                if (!row) return title;
-                const extra = [];
-                if (showRegion) extra.push(row.region === 'Overseas' ? '境外' : '内地');
-                if (showTravel) extra.push(row.includeTravel ? '旅居' : '定居');
-                return extra.length ? `${title}\n${extra.join(' · ')}` : title;
-              },
+              color: '#91a4b5',
+              formatter: (value) => service.monthKeyToLabel(value),
             },
           },
           yAxis: {
             type: 'value',
             name: '总预算（人民币）',
-            axisLabel: { formatter: (v) => (v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v)) },
+            nameTextStyle: { color: '#91a4b5' },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+            axisLabel: {
+              color: '#91a4b5',
+              formatter: (v) => (v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v)),
+            },
           },
           series: [{
             name: '总预算',

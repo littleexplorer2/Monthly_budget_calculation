@@ -19,61 +19,24 @@ function ratePayload(value) {
   };
 }
 
-test('较早月份的汇率成功响应不能覆盖新月份，且不能提前关闭新请求的 loading', async () => {
-  const september = deferred();
-  const october = deferred();
-  const { app, doc } = createApp({
-    monthlyRates: (request) => (
-      request.url.includes('month=9') ? september.promise : october.promise
-    ),
+test('统计面板只展示预算计算响应，不单独请求月度汇率', async () => {
+  const { app, doc, requests } = createApp({
+    monthlyRates: () => { throw new Error('不应调用独立月度汇率接口'); },
   });
   await app.init();
 
-  app.state.year = 2026;
-  app.state.month = 9;
-  const oldRequest = app.loadRates();
-  app.state.month = 10;
-  const currentRequest = app.loadRates();
+  app.openSection('dashboard');
 
-  september.resolve(ratePayload(7.01));
-  await oldRequest;
-  assert.equal(app.state.ratesData, null, '旧月份响应不应写入当前月份');
-  assert.equal(doc.querySelector('#loading-overlay').hasAttribute('hidden'), false,
-    '新月份请求仍在进行时，旧请求 finally 不应关闭 loading');
-
-  october.resolve(ratePayload(7.22));
-  await currentRequest;
-  assert.equal(app.state.ratesMonth, '2026-10');
-  assert.equal(app.state.ratesData.series.USD[0], 7.22);
-  assert.equal(doc.querySelector('#loading-overlay').hasAttribute('hidden'), true);
-});
-
-test('较早月份的汇率失败响应不能清空新月份已经成功的数据', async () => {
-  const september = deferred();
-  const october = deferred();
-  const { app, doc } = createApp({
-    monthlyRates: (request) => (
-      request.url.includes('month=9') ? september.promise : october.promise
-    ),
-  });
-  await app.init();
-
-  app.state.year = 2026;
-  app.state.month = 9;
-  const oldRequest = app.loadRates();
-  app.state.month = 10;
-  const currentRequest = app.loadRates();
-
-  october.resolve(ratePayload(7.33));
-  await currentRequest;
-  september.reject(new Error('测试：旧月份请求失败'));
-  await oldRequest;
-
-  assert.equal(app.state.ratesMonth, '2026-10');
-  assert.equal(app.state.ratesData.series.USD[0], 7.33);
-  assert.equal(doc.querySelector('#toast').textContent.includes('旧月份请求失败'), false,
-    '已过期失败不应向当前月份显示错误');
-  assert.equal(doc.querySelector('#loading-overlay').hasAttribute('hidden'), true);
+  assert.equal(app.state.activeSection, 'dashboard');
+  assert.equal(doc.querySelector('#tab-dashboard').classList.contains('active'), true);
+  assert.equal(doc.querySelector('#tab-analysis').classList.contains('active'), true);
+  doc.querySelector('.dashboard-nav-item[data-dashboard-tab="rates"]').click();
+  assert.equal(app.state.activeDashboardTab, 'rates');
+  assert.equal(doc.querySelector('#tab-analysis').classList.contains('active'), false);
+  assert.equal(doc.querySelector('#tab-rates').classList.contains('active'), true);
+  assert.equal(doc.querySelector('#rates-empty').hasAttribute('hidden'), false);
+  assert.equal(requests.some((request) => request.url.includes('/api/rates?')), false);
+  assert.equal(doc.querySelector('#btn-refresh-rates'), null);
 });
 
 test('月度计算期间切月后，响应仍保存到发起月份且不污染当前月份结果或汇率', async () => {
@@ -87,8 +50,6 @@ test('月度计算期间切月后，响应仍保存到发起月份且不污染�
     monthlyBudget: () => calculation.promise,
   });
   await app.init();
-  app.state.standardsConfirmed = true;
-
   const pending = app.calculate();
   app.changeMonth(1);
   calculation.resolve({

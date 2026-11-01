@@ -19,12 +19,31 @@ REGION_NAMES = {"Mainland": "内地", "Overseas": "境外"}
 
 
 
-CURRENCY_NAMES = {"CNY": "人民币", "HKD": "港币", "USD": "美元", "TWD": "新台币", "THB": "泰铢"}
+CURRENCY_NAMES = {
+    "CNY": "人民币", "CNH": "离岸人民币", "HKD": "港币", "USD": "美元",
+    "TWD": "新台币", "THB": "泰铢",
+}
+
+
+CURRENCY_PRIORITY = ("CNY", "HKD", "USD")
+
+
+def _currency_sort_key(currency: str) -> tuple[int, str]:
+    code = str(currency).strip().upper()
+    try:
+        return CURRENCY_PRIORITY.index(code), code
+    except ValueError:
+        return len(CURRENCY_PRIORITY), code
+
+
+def _sort_currencies(currencies) -> list[str]:
+    """CNY, HKD, USD first; remaining ISO-like codes alphabetically."""
+    return sorted({str(currency).strip().upper() for currency in currencies}, key=_currency_sort_key)
 
 
 
 def _all_currencies(defaults_snapshot: dict | None = None) -> list[str]:
-    """当前生效默认标准涉及的全部币种（按字母序，保证响应稳定）。"""
+    """当前生效默认标准涉及的全部币种（按统一展示顺序）。"""
     snapshot = defaults_snapshot or app_defaults.default_standards_snapshot()
     curr = set(snapshot["extra"].keys())
     for std in (snapshot["variable"], snapshot["fixed"]):
@@ -33,7 +52,7 @@ def _all_currencies(defaults_snapshot: dict | None = None) -> list[str]:
     # 旅居标准结构为 {地点: {币种: {"daily":.., "once":..}}}，币种名在最内层字典的键
     for inner in snapshot["travel"].values():
         curr.update(inner.keys())
-    return sorted(curr)
+    return _sort_currencies(curr)
 
 
 
@@ -73,7 +92,7 @@ def _meta_payload() -> dict:
         })
     regions = [
         {"key": r, "name": REGION_NAMES.get(r, r),
-         "currencies": {c: curr_names.get(c, c) for c in std}}
+         "currencies": {c: curr_names.get(c, c) for c in _sort_currencies(std)}}
         for r, std in defaults["fixed"].items()
     ]
     warnings = []
@@ -89,6 +108,7 @@ def _meta_payload() -> dict:
         "locations": locations,
         "regions": regions,
         "currencies": _all_currencies(defaults),
+        "currency_priority": list(CURRENCY_PRIORITY),
         "currency_names": curr_names,
         "location_names": loc_names,
         "defaults_customized": defaults["customized"],
@@ -129,4 +149,4 @@ def _parse_currencies(currencies: str | None) -> list[str]:
     if bad:
         raise ValueError(f"币种代码无效：{', '.join(bad)}（应为 2-6 位字母，如 EUR）")
     # 去重且保持稳定顺序
-    return sorted(set(parts))
+    return _sort_currencies(parts)

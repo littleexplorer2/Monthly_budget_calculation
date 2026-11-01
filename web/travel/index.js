@@ -78,7 +78,6 @@
         service.renderTravelPicker();
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
-        standardsViewModule.invalidateConfirmation();
       }
 
       function selectAllTravel(on) {
@@ -87,7 +86,6 @@
         service.renderTravelPicker();
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
-        standardsViewModule.invalidateConfirmation();
       }
 
       function toggleTravelPicker(show) {

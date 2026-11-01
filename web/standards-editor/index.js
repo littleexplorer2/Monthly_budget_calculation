@@ -177,9 +177,7 @@
         }
         standardsModule.saveOverrides();        // 先把标准差异写入统一状态快照
         persistenceModule.saveState();
-        standardsViewModule.renderStandardsHint();
         travelModule.renderTravelPicker();   // 旅居金额变化同步到选择菜单
-        standardsViewModule.invalidateConfirmation(); // 标准被修改，需重新确认
       }
 
       /** 默认标准区域：只改内存草稿，由「保存默认标准」写入 data/defaults.json */
@@ -427,7 +425,6 @@
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
-        standardsViewModule.invalidateConfirmation();
         service.closeAddStandard();
         feedbackModule.toast('已新建预算标准（仅当月生效）', 'success');
       }
@@ -528,7 +525,6 @@
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
-        standardsViewModule.invalidateConfirmation();
         feedbackModule.toast('已删除该新建标准（仅当月）', 'info');
       }
 
@@ -557,14 +553,13 @@
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
-        standardsViewModule.renderStandardsHint();
       }
 
       /** 把草稿里的默认标准提交到服务器（data/defaults.json），不影响当月与已保存月份 */
       async function saveDefaultStandardsToServer() {
         if (runtime.defaultsSaveInFlight) return;
         if (!state.editingDefaults || !state.defaultsDraft) {
-          feedbackModule.toast('请先用顶栏「⚙ 默认预算标准」按钮打开默认标准弹窗', 'warn');
+          feedbackModule.toast('请先用上下文栏「⚙ 默认预算标准」按钮打开默认标准弹窗', 'warn');
           return;
         }
         const draft = state.defaultsDraft.standards;
@@ -662,8 +657,7 @@
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
-        standardsViewModule.invalidateConfirmation(); // 标准被重置，需重新确认
-        feedbackModule.toast('本月预算已改回当前默认标准（含清除本月新建项），请重新确认', 'info');
+        feedbackModule.toast('本月预算已改回当前默认标准（含清除本月新建项）', 'info');
       }
 
       Object.assign(service, {

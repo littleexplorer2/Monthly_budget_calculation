@@ -187,7 +187,7 @@ async function waitForPage(evaluate, expression, message) {
   throw new Error(message);
 }
 
-test('全年页在 desktop 并排、在 390px 单列且仅表格容器滚动', async (t) => {
+test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平溢出', async (t) => {
   const mock = await startMockServer();
   let probe = null;
   let cdp = null;
@@ -206,16 +206,48 @@ test('全年页在 desktop 并排、在 390px 单列且仅表格容器滚动', a
     });
     await waitForPage(
       cdp.evaluate,
-      `document.readyState === 'complete' && document.querySelector('#tab-analysis') && document.querySelector('#annual-budget-rows')`,
+      `document.readyState === 'complete' && document.querySelector('#tab-dashboard') && document.querySelector('#annual-budget-rows')`,
       '应用页面未就绪',
     );
-    await cdp.evaluate(`document.querySelector('.side-nav .side-nav-item[data-tab="analysis"]').click()`);
+    const shell = await cdp.evaluate(`(() => {
+      const header = document.querySelector('.site-header');
+      const month = document.querySelector('.header-period');
+      const context = document.querySelector('#options-panel');
+      const options = document.querySelector('.context-options');
+      const subnav = document.querySelector('.section-nav');
+      const actions = document.querySelector('.context-actions');
+      const rect = (el) => { const r = el.getBoundingClientRect(); return { left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width, height:r.height }; };
+      return {
+        bodyBackground: getComputedStyle(document.body).backgroundColor,
+        headerBackground: getComputedStyle(header).backgroundImage,
+        headerBackdrop: getComputedStyle(header).backdropFilter || getComputedStyle(header).webkitBackdropFilter,
+        headerRadius: getComputedStyle(header).borderRadius,
+        header: rect(header), month: rect(month), context: rect(context), options: rect(options), subnav: rect(subnav), actions: rect(actions),
+      };
+    })()`);
+    assert.match(shell.bodyBackground, /rgb\((?:[0-9]|1[0-9]|2[0-9]),\s*(?:[0-9]|1[0-9]|2[0-9]),\s*(?:[0-9]|1[0-9]|2[0-9])\)/,
+      '页面必须使用深色背景');
+    assert.notEqual(shell.headerBackdrop, 'none', '全局栏应启用液态玻璃模糊');
+    assert.match(shell.headerRadius, /1[8-9]px|2[0-9]px/);
+    assert.ok(shell.header.left > 0 && shell.header.right < 1280, '全局栏应悬浮并与视口两侧留空');
+    assert.ok(shell.month.top >= shell.header.top && shell.month.bottom <= shell.header.bottom, '月份控件应位于全局栏内');
+    assert.ok(shell.options.right <= shell.subnav.left + 2, '预算选项应位于子分区左侧');
+    assert.ok(shell.subnav.right <= shell.actions.left + 2, '操作按钮应位于子分区右侧');
+    await cdp.evaluate(`document.querySelector('.primary-nav-item[data-section="dashboard"]').click()`);
     await waitForPage(
       cdp.evaluate,
-      `document.querySelectorAll('#annual-budget-rows tr').length >= 5
+      `document.querySelectorAll('#annual-budget-rows tr').length === 3
         && document.querySelector('#annual-budget-status').textContent !== '正在获取汇率…'`,
       '全年页数据未渲染',
     );
+
+    const dashboardNavigation = await cdp.evaluate(`(() => {
+      const bar = document.querySelector('#options-panel').getBoundingClientRect();
+      const nav = document.querySelector('.dashboard-nav').getBoundingClientRect();
+      return { barCenter: (bar.left + bar.right) / 2, navCenter: (nav.left + nav.right) / 2 };
+    })()`);
+    assert.ok(Math.abs(dashboardNavigation.barCenter - dashboardNavigation.navCenter) <= 2,
+      '统计面板子分区导航应位于上下文栏中间');
 
     const desktop = await cdp.evaluate(`(() => {
       const annual = document.querySelector('.annual-budget-card').getBoundingClientRect();
@@ -225,6 +257,7 @@ test('全年页在 desktop 并排、在 390px 单列且仅表格容器滚动', a
       const visible = (r) => r.width > 0 && r.height > 0 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight;
       return {
         innerWidth,
+        clientWidth: document.documentElement.clientWidth,
         htmlScrollWidth: document.documentElement.scrollWidth,
         bodyScrollWidth: document.body.scrollWidth,
         annual: { left: annual.left, right: annual.right, top: annual.top, bottom: annual.bottom, width: annual.width },
@@ -253,9 +286,11 @@ test('全年页在 desktop 并排、在 390px 单列且仅表格容器滚动', a
       const monthly = document.querySelector('.monthly-comparison-card').getBoundingClientRect();
       const wrapper = document.querySelector('.annual-budget-table-wrap');
       const wrapperRect = wrapper.getBoundingClientRect();
-      const cardInsideViewport = (r) => r.left >= -1 && r.right <= innerWidth + 1 && r.width > 0;
+      const clientWidth = document.documentElement.clientWidth;
+      const cardInsideViewport = (r) => r.left >= -1 && r.right <= clientWidth + 1 && r.width > 0;
       return {
         innerWidth,
+        clientWidth,
         htmlScrollWidth: document.documentElement.scrollWidth,
         bodyScrollWidth: document.body.scrollWidth,
         annual: { left: annual.left, right: annual.right, top: annual.top, bottom: annual.bottom, width: annual.width },
@@ -269,16 +304,33 @@ test('全年页在 desktop 并排、在 390px 单列且仅表格容器滚动', a
         },
       };
     })()`);
+    assert.equal(mobile.clientWidth, 390);
     assert.equal(mobile.innerWidth, 390);
     assert.ok(mobile.monthly.top >= mobile.annual.bottom + 10, '窄屏两张主卡应纵向单列排列');
     assert.equal(mobile.annualInside, true);
     assert.equal(mobile.monthlyInside, true);
     assert.ok(mobile.wrapper.scrollWidth > mobile.wrapper.clientWidth, '窄屏年度表格应在容器内产生水平滚动');
     assert.match(mobile.wrapper.overflowX, /auto|scroll/);
-    assert.ok(mobile.wrapper.left >= -1 && mobile.wrapper.right <= mobile.innerWidth + 1,
+    assert.ok(mobile.wrapper.left >= -1 && mobile.wrapper.right <= mobile.clientWidth + 1,
       '表格滚动容器自身不得超出视口');
-    assert.ok(mobile.htmlScrollWidth <= mobile.innerWidth + 1, '窄屏页面不得水平溢出');
-    assert.ok(mobile.bodyScrollWidth <= mobile.innerWidth + 1, '窄屏 body 不得水平溢出');
+    assert.ok(mobile.htmlScrollWidth <= mobile.clientWidth + 1, '窄屏页面不得水平溢出');
+    assert.ok(mobile.bodyScrollWidth <= mobile.clientWidth + 1, '窄屏 body 不得水平溢出');
+
+    for (const tab of ['standards', 'itinerary', 'result']) {
+      await cdp.evaluate(`document.querySelector('.section-nav-item[data-tab="${tab}"]').click()`);
+      await sleep(100);
+      const page = await cdp.evaluate(`(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        innerWidth,
+        htmlScrollWidth: document.documentElement.scrollWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+      }))()`);
+      assert.equal(page.clientWidth, 390, `${tab} 页设备视口宽度应保持 390px`);
+      assert.ok(page.htmlScrollWidth <= page.clientWidth + 1,
+        `${tab} 页不得产生页面级水平溢出：${JSON.stringify(page)}`);
+      assert.ok(page.bodyScrollWidth <= page.clientWidth + 1,
+        `${tab} 页 body 不得产生水平溢出：${JSON.stringify(page)}`);
+    }
   } catch (error) {
     // 受限 Windows 沙箱有时能短暂建立 CDP，随后由系统终止 renderer；
     // 这与页面断言失败不同，按环境限制记录为 skip，且不尝试放宽沙箱。

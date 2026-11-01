@@ -9,6 +9,9 @@
 
       const state = {
         meta: null,               // /api/meta 返回的元数据
+        activeSection: 'budget',  // budget | dashboard（仅界面导航，不持久化）
+        activeBudgetTab: 'standards',
+        activeDashboardTab: 'analysis',
         year: 0,
         month: 0,                 // 1-12
         region: 'Mainland',
@@ -30,13 +33,11 @@
         calSel: { start: null, end: null },
         ratesData: null,          // 最近一次汇率数据
         ratesMonth: null,         // 汇率数据对应的月份 key
-        ratesFromCalc: false,     // 当前汇率数据是否来自计算响应（仅涉及币种子集）
-        rateRequestId: 0,         // 月度汇率请求序号；切月/重复刷新时只接受最后一次响应
+        ratesSource: null,        // 本次计算的行情来源（当月或月初上月均值回退）
         calcResult: null,
         rateCharts: [],           // 每币种独立折线图实例 { currency, instance }
         analysisChart: null,      // 数据分析页折线图
         busy: false,
-        standardsConfirmed: false, // 用户是否已确认当前预算标准无误（修改标准/切换区域后需重新确认）
         // 新建预算标准：当月自定义地点（[{key,name,category,currency}]）与固定预算自定义币种名
         customLocations: [],
         customCurrencies: {},

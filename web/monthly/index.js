@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.monthly = Object.freeze({
-    dependencies: Object.freeze(["http","calendar","feedback","itinerary","locations","network","persistence","results","shared","shell","standards","standardsView","state","travel"]),
-    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, network: networkModule, persistence: persistenceModule, results: resultsModule, shared: sharedModule, shell: shellModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["http","calendar","feedback","itinerary","locations","navigation","network","persistence","rates","results","shared","standards","standardsView","state","travel"]),
+    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       function monthKey() { return `${state.year}-${sharedModule.pad2(state.month)}`; }
@@ -53,6 +53,26 @@
         service.updateTravelUiVisibility();
       }
 
+      function monthMapHasData(map, key) {
+        if (!map || typeof map !== 'object' || !Object.prototype.hasOwnProperty.call(map, key)) return false;
+        const value = map[key];
+        if (!value || typeof value !== 'object') return !!value;
+        return Object.keys(value).length > 0;
+      }
+
+      function hasMonthData(key) {
+        return [
+          state.itineraryByMonth,
+          state.optionsByMonth,
+          state.overridesByMonth,
+          state.resultsByMonth,
+        ].some((map) => service.monthMapHasData(map, key));
+      }
+
+      function confirmMonthCreation(year, month) {
+        return window.confirm(`是否要新增${year}年${sharedModule.pad2(month)}月的预算数据？`);
+      }
+
       /** 仅勾选「包含旅居」时：创建旅居预算栏目；关闭时从 DOM 删除（不只是 CSS 隐藏） */
       function updateTravelUiVisibility() {
         const on = !!state.includeTravel;
@@ -82,22 +102,9 @@
       /* --------------------------------------------------------------------------
        * 计算
        * ------------------------------------------------------------------------ */
-      async function calculate() {
-        if (state.busy) return;
-
-        // 门禁 1：必须先确认预算标准无误（标准被修改/区域被切换后需重新确认）
-        if (!state.standardsConfirmed) {
-          feedbackModule.toast('请先确认预算标准无误', 'warn');
-          shellModule.switchTab('standards');
-          const panel = sharedModule.$('#options-panel');
-          if (panel) {
-            panel.classList.add('attention');
-            if (typeof panel.scrollIntoView === 'function') {
-              panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }
-          return;
-        }
+      async function calculate(options = {}) {
+        const automatic = !!(options && options.automatic);
+        if (state.busy) return false;
 
         // 从发起请求的月份捕获完整计算上下文。等待后端响应期间用户可以切月，
         // 结果必须仍归档到原月份，且不能覆盖新月份当前展示的结果/汇率。
@@ -114,13 +121,17 @@
           .map((loc) => ({ location: loc, ranges: itin[loc] }));
 
         if (!entries.length) {
-          feedbackModule.toast('请先在「行程安排」中添加行程', 'warn');
-          shellModule.switchTab('itinerary');
-          return;
+          if (!automatic) {
+            feedbackModule.toast('请先在「行程安排」中添加行程', 'warn');
+            navigationModule.openBudgetTab('itinerary');
+          }
+          return false;
         }
 
         state.busy = true;
-        feedbackModule.setLoading(true, '正在计算预算（需获取当月汇率，首次拉取可能需要数秒）…');
+        if (!automatic) {
+          feedbackModule.setLoading(true, '正在更新预算（需获取当月汇率，首次拉取可能需要数秒）…');
+        }
         try {
           const result = await apiModule.api('/api/calculate', {
             method: 'POST',
@@ -129,7 +140,7 @@
               month: requestMonth,
               region: requestRegion,
               itinerary: entries,
-              // 发送用户已确认的完整标准快照（含当月新建地点/币种元数据），
+              // 发送当前页面的完整标准快照（含当月新建地点/币种元数据），
               // 避免并发默认值变更改变本次计算输入。
               standards_override: requestStandards,
               include_travel: requestIncludeTravel,
@@ -143,27 +154,31 @@
             includeTravel: requestIncludeTravel,
           }); // 先确认项目状态是否真正落盘
           if (service.monthKey() === requestMonthKey) {
-            // 顺带缓存汇率数据（仅涉及币种子集，进入汇率页时会自动拉全量）
+            // 统计面板只展示本次计算实际使用的行情，不再另设月度拉取操作。
             state.ratesData = result.rates;
             state.ratesMonth = requestMonthKey;
-            state.ratesFromCalc = true;
+            state.ratesSource = result.rate_source || null;
             resultsModule.renderResult();
-            shellModule.switchTab('result');
+            if (!automatic) navigationModule.openBudgetTab('result');
           }
           const stayedOnMonth = service.monthKey() === requestMonthKey;
           const calculatedMonth = `${requestYear}年${sharedModule.pad2(requestMonth)}月`;
-          feedbackModule.toast(
-            saved
-              ? (stayedOnMonth ? '计算完成，该月结果已保存' : `${calculatedMonth}预算计算完成并已保存`)
-              : (stayedOnMonth ? '计算完成，但保存到服务器失败' : `${calculatedMonth}计算完成，但保存到服务器失败`),
-            saved ? 'success' : 'warn',
-          );
+          if (!automatic || !saved) {
+            feedbackModule.toast(
+              saved
+                ? (stayedOnMonth ? '预算已更新并保存' : `${calculatedMonth}预算已更新并保存`)
+                : (stayedOnMonth ? '预算已更新，但保存到服务器失败' : `${calculatedMonth}预算已更新，但保存到服务器失败`),
+              saved ? 'success' : 'warn',
+            );
+          }
+          return true;
         } catch (err) {
-          feedbackModule.toast(err.message, 'error');
+          feedbackModule.toast(automatic ? `自动更新月度预算失败：${err.message}` : err.message, 'error');
           networkModule.maybeShowNetworkWarning(err.message); // 计算中的汇率拉取失败 → 同步提示网络异常/VPN
+          return false;
         } finally {
           state.busy = false;
-          feedbackModule.setLoading(false);
+          if (!automatic) feedbackModule.setLoading(false);
         }
       }
 
@@ -184,34 +199,72 @@
         travelModule.renderTravelPicker();
         if (state.calcResult) resultsModule.renderResult();
         else resultsModule.clearResult();
-        standardsViewModule.invalidateConfirmation(); // 该月标准可能不同，需重新确认
-        shellModule.renderAll();
+        service.renderMonthContext();
+      }
+
+      /** 重绘所有随月份变化的界面；外壳初始化和月份导航共用这一入口。 */
+      function renderMonthContext() {
+        sharedModule.$('#month-label').textContent = `${state.year}年${sharedModule.pad2(state.month)}月`;
+        service.syncOptionsUI();
+        sharedModule.$('#itinerary-month').textContent = `${state.year}年${state.month}月`;
+        sharedModule.$('#rates-title').textContent = `${state.year}年${state.month}月 汇率走势（兑人民币）`;
+        if (state.ratesMonth !== service.monthKey()) {
+          state.ratesData = null;
+          state.ratesSource = null;
+          ratesModule.destroyRateCharts();
+          const charts = sharedModule.$('#rates-charts');
+          if (charts) charts.innerHTML = '';
+          const stats = sharedModule.$('#rates-stats-table');
+          if (stats) stats.innerHTML = '';
+        }
+        calendarModule.renderCalendar();
+        itineraryModule.renderItinerary();
+        calendarModule.updateManualDefaults();
+        navigationModule.refreshDashboard();
+      }
+
+      function navigateToMonth(year, month) {
+        if (year < 2000 || year > 2100) {
+          feedbackModule.toast('超出支持年份范围（2000-2100）', 'warn');
+          return false;
+        }
+        if (year === state.year && month === state.month) return true;
+
+        const targetKey = `${year}-${sharedModule.pad2(month)}`;
+        const createsMonth = !service.hasMonthData(targetKey);
+        if (createsMonth && !service.confirmMonthCreation(year, month)) return false;
+
+        // 只有确认导航后才保存已有当前月；空白来源月也不能因离开而被自动创建。
+        const sourceKey = service.monthKey();
+        if (service.hasMonthData(sourceKey)) {
+          service.saveMonthOptions();
+          standardsModule.snapshotOverridesIntoState();
+        }
+        state.year = year;
+        state.month = month;
+        state.calSel = { start: null, end: null };
+        service.switchMonthData();
+
+        if (createsMonth) {
+          // 用户已明确同意新增：建立默认计算选项与标准快照，之后才进入唯一持久化管线。
+          service.saveMonthOptions(true);
+          standardsModule.snapshotOverridesIntoState();
+        }
+        persistenceModule.persist('debounce');
+        return true;
       }
 
       function changeMonth(delta) {
-        let m = state.month + delta;
-        let y = state.year;
-        if (m < 1) { m = 12; y -= 1; }
-        if (m > 12) { m = 1; y += 1; }
-        if (y < 2000 || y > 2100) { feedbackModule.toast('超出支持年份范围（2000-2100）', 'warn'); return; }
-        service.saveMonthOptions();
-        standardsModule.snapshotOverridesIntoState();
-        persistenceModule.persist('debounce');
-        state.year = y;
-        state.month = m;
-        state.calSel = { start: null, end: null };
-        service.switchMonthData();
+        let month = state.month + delta;
+        let year = state.year;
+        if (month < 1) { month = 12; year -= 1; }
+        if (month > 12) { month = 1; year += 1; }
+        return service.navigateToMonth(year, month);
       }
 
       function goThisMonth() {
         const now = new Date();
-        service.saveMonthOptions();
-        standardsModule.snapshotOverridesIntoState();
-        persistenceModule.persist('debounce');
-        state.year = now.getFullYear();
-        state.month = now.getMonth() + 1;
-        state.calSel = { start: null, end: null };
-        service.switchMonthData();
+        return service.navigateToMonth(now.getFullYear(), now.getMonth() + 1);
       }
 
       Object.assign(service, {
@@ -221,9 +274,14 @@
         saveMonthOptions,
         applyMonthOptions,
         syncOptionsUI,
+        monthMapHasData,
+        hasMonthData,
+        confirmMonthCreation,
         updateTravelUiVisibility,
         calculate,
         switchMonthData,
+        renderMonthContext,
+        navigateToMonth,
         changeMonth,
         goThisMonth,
       });

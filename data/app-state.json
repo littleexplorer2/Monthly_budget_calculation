@@ -1,9 +1,35 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-10T13:45:01Z",
+  "updatedAt": "2026-11-01T03:09:39Z",
   "year": 2026,
   "month": 10,
   "itineraryByMonth": {
+    "2026-11": {
+      "Hong_Kong": [
+        {
+          "start": "2026-11-01",
+          "end": "2026-11-05"
+        },
+        {
+          "start": "2026-11-07",
+          "end": "2026-11-19"
+        },
+        {
+          "start": "2026-11-23",
+          "end": "2026-11-30"
+        }
+      ],
+      "Shenzhen": [
+        {
+          "start": "2026-11-06",
+          "end": "2026-11-06"
+        },
+        {
+          "start": "2026-11-20",
+          "end": "2026-11-22"
+        }
+      ]
+    },
     "2026-10": {
       "Shenzhen": [
         {
@@ -12,7 +38,7 @@
         },
         {
           "start": "2026-10-16",
-          "end": "2026-10-18"
+          "end": "2026-10-16"
         }
       ],
       "Hong_Kong": [
@@ -21,7 +47,7 @@
           "end": "2026-10-15"
         },
         {
-          "start": "2026-10-19",
+          "start": "2026-10-17",
           "end": "2026-10-31"
         }
       ]
@@ -218,11 +244,17 @@
     }
   },
   "optionsByMonth": {
+    "2026-11": {
+      "region": "Overseas",
+      "includeTravel": false,
+      "travelSelected": null,
+      "savedAt": "2026-10-31T16:37:50.861Z"
+    },
     "2026-10": {
       "region": "Overseas",
       "includeTravel": false,
       "travelSelected": null,
-      "savedAt": "2026-10-01T04:40:16.310Z"
+      "savedAt": "2026-10-18T15:41:57.001Z"
     },
     "2026-07": {
       "region": "Mainland",
@@ -290,11 +322,134 @@
       "fixed": {
         "Mainland": {
           "USD": 31.9,
-          "CNY": 224,
-          "HKD": 76
+          "CNY": 109,
+          "HKD": 166
         },
         "Overseas": {
-          "USD": 23.4,
+          "USD": 19.9,
+          "CNY": 124,
+          "HKD": 214
+        }
+      },
+      "travel": {
+        "Shanghai": {
+          "CNY": {
+            "daily": 175,
+            "once": 200
+          }
+        },
+        "Taipei": {
+          "TWD": {
+            "daily": 1450,
+            "once": 1000
+          }
+        },
+        "Bangkok": {
+          "THB": {
+            "daily": 1100,
+            "once": 2000
+          }
+        }
+      },
+      "extra": {
+        "CNY": 0,
+        "USD": 0,
+        "HKD": 600
+      },
+      "custom_locations": [],
+      "custom_currencies": {},
+      "_locations": [
+        {
+          "key": "Shenzhen",
+          "name": "深圳",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 85
+        },
+        {
+          "key": "Hong_Kong",
+          "name": "香港",
+          "category": "variable",
+          "currency": "HKD",
+          "currency_name": "港币",
+          "default": 160
+        },
+        {
+          "key": "Chengdu",
+          "name": "成都",
+          "category": "variable",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "default": 30
+        },
+        {
+          "key": "Shanghai",
+          "name": "上海",
+          "category": "travel",
+          "currency": "CNY",
+          "currency_name": "人民币",
+          "daily": 175,
+          "once": 200
+        },
+        {
+          "key": "Taipei",
+          "name": "台北",
+          "category": "travel",
+          "currency": "TWD",
+          "currency_name": "新台币",
+          "daily": 1450,
+          "once": 1000
+        },
+        {
+          "key": "Bangkok",
+          "name": "曼谷",
+          "category": "travel",
+          "currency": "THB",
+          "currency_name": "泰铢",
+          "daily": 1100,
+          "once": 2000
+        }
+      ],
+      "_location_names": {
+        "Extra": "额外预算",
+        "Shenzhen": "深圳",
+        "Hong_Kong": "香港",
+        "Chengdu": "成都",
+        "Shanghai": "上海",
+        "Taipei": "台北",
+        "Bangkok": "曼谷"
+      },
+      "_currency_names": {
+        "CNY": "人民币",
+        "CNH": "离岸人民币",
+        "HKD": "港币",
+        "USD": "美元",
+        "TWD": "新台币",
+        "THB": "泰铢"
+      }
+    },
+    "2026-11": {
+      "_snapshot": true,
+      "variable": {
+        "Shenzhen": {
+          "CNY": 85
+        },
+        "Hong_Kong": {
+          "HKD": 160
+        },
+        "Chengdu": {
+          "CNY": 30
+        }
+      },
+      "fixed": {
+        "Mainland": {
+          "USD": 31.9,
+          "CNY": 119,
+          "HKD": 166
+        },
+        "Overseas": {
+          "USD": 19.9,
           "CNY": 119,
           "HKD": 214
         }
@@ -390,6 +545,7 @@
       },
       "_currency_names": {
         "CNY": "人民币",
+        "CNH": "离岸人民币",
         "HKD": "港币",
         "USD": "美元",
         "TWD": "新台币",
@@ -1256,29 +1412,29 @@
       "summary": {
         "计算月份": "2026年10月",
         "居住区域": "Overseas",
-        "可变费用合计(人民币)": 3925.97,
-        "固定费用合计(人民币)": 458.59,
-        "额外预算合计(人民币)": 0,
-        "总预算(人民币)": 4384.56
+        "可变费用合计(人民币)": 4021.75,
+        "固定费用合计(人民币)": 951.02,
+        "额外预算合计(人民币)": 511.49,
+        "总预算(人民币)": 4972.77
       },
       "daily_details": [
         {
           "location": "Hong_Kong",
           "type": "可变预算",
           "currency": "HKD",
-          "day_count": 25,
+          "day_count": 27,
           "daily_standard_local": 160,
-          "variable_cost_local": 4000,
-          "variable_cost_rmb": 3415.97
+          "variable_cost_local": 4320,
+          "variable_cost_rmb": 3681.75
         },
         {
           "location": "Shenzhen",
           "type": "可变预算",
           "currency": "CNY",
-          "day_count": 6,
+          "day_count": 4,
           "daily_standard_local": 85,
-          "variable_cost_local": 510,
-          "variable_cost_rmb": 510
+          "variable_cost_local": 340,
+          "variable_cost_rmb": 340
         }
       ],
       "fixed_details": [
@@ -1286,9 +1442,86 @@
           "location": "Overseas",
           "type": "固定预算",
           "currency": "USD",
-          "avg_rate": 6.702,
-          "local_cost": 23.4,
-          "rmb_cost": 156.83
+          "avg_rate": 6.6885,
+          "local_cost": 19.9,
+          "rmb_cost": 133.1
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "CNY",
+          "avg_rate": 1,
+          "local_cost": 124,
+          "rmb_cost": 124
+        },
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "HKD",
+          "avg_rate": 0.8525,
+          "local_cost": 214,
+          "rmb_cost": 182.43
+        }
+      ],
+      "extra_details": [
+        {
+          "location": "Extra",
+          "type": "额外预算",
+          "currency": "HKD",
+          "avg_rate": 0.8525,
+          "local_cost": 600,
+          "rmb_cost": 511.49
+        }
+      ],
+      "warnings": [],
+      "deduped_entries": 0,
+      "rate_source": {
+        "kind": "current_month",
+        "requested_month": "2026-10",
+        "fallback": false
+      },
+      "savedAt": "2026/11/1 11:09:13",
+      "region": "Overseas",
+      "includeTravel": false,
+      "stale": false
+    },
+    "2026-11": {
+      "summary": {
+        "计算月份": "2026年11月",
+        "居住区域": "Overseas",
+        "可变费用合计(人民币)": 3886.33,
+        "固定费用合计(人民币)": 434.53,
+        "额外预算合计(人民币)": 0,
+        "总预算(人民币)": 4320.86
+      },
+      "daily_details": [
+        {
+          "location": "Hong_Kong",
+          "type": "可变预算",
+          "currency": "HKD",
+          "day_count": 26,
+          "daily_standard_local": 160,
+          "variable_cost_local": 4160,
+          "variable_cost_rmb": 3546.33
+        },
+        {
+          "location": "Shenzhen",
+          "type": "可变预算",
+          "currency": "CNY",
+          "day_count": 4,
+          "daily_standard_local": 85,
+          "variable_cost_local": 340,
+          "variable_cost_rmb": 340
+        }
+      ],
+      "fixed_details": [
+        {
+          "location": "Overseas",
+          "type": "固定预算",
+          "currency": "USD",
+          "avg_rate": 6.6885,
+          "local_cost": 19.9,
+          "rmb_cost": 133.1
         },
         {
           "location": "Overseas",
@@ -1302,15 +1535,29 @@
           "location": "Overseas",
           "type": "固定预算",
           "currency": "HKD",
-          "avg_rate": 0.854,
+          "avg_rate": 0.8525,
           "local_cost": 214,
-          "rmb_cost": 182.77
+          "rmb_cost": 182.43
         }
       ],
       "extra_details": [],
-      "warnings": [],
+      "warnings": [
+        "2026-11 月首日暂无可用行情，已使用 2026-10 月平均汇率计算"
+      ],
       "deduped_entries": 0,
-      "savedAt": "2026/10/10 21:44:39",
+      "rate_source": {
+        "kind": "previous_month_average",
+        "requested_month": "2026-11",
+        "source_month": "2026-10",
+        "fallback": true,
+        "averages": {
+          "CNY": 1,
+          "HKD": 0.8524838368738851,
+          "USD": 6.688474147550521,
+          "CNH": 1.005293770350338
+        }
+      },
+      "savedAt": "2026/11/1 11:08:55",
       "region": "Overseas",
       "includeTravel": false,
       "stale": false
@@ -1853,74 +2100,54 @@
   },
   "annualBudgetsByYear": {
     "2026": {
-      "CNY": 27950.0,
+      "CNY": 29000.0,
       "HKD": 2000.0,
-      "THB": 0.0,
-      "TWD": 0.0,
       "USD": 0.0
     }
   },
   "annualResultsByYear": {
     "2026": {
       "summary": {
-        "全年预算合计(人民币)": 29691.45
+        "全年预算合计(人民币)": 30738.75
       },
       "details": [
         {
           "currency": "CNY",
-          "amount": 27950,
+          "amount": 29000,
           "average_rate": 1,
-          "cny_amount": 27950,
+          "cny_amount": 29000,
           "observation_count": 1,
-          "first_date": "2026-10-10",
-          "last_date": "2026-10-10"
+          "first_date": "2026-11-01",
+          "last_date": "2026-11-01"
         },
         {
           "currency": "HKD",
           "amount": 2000,
-          "average_rate": 0.8707228114109228,
-          "cny_amount": 1741.45,
-          "observation_count": 202,
+          "average_rate": 0.869376851941034,
+          "cny_amount": 1738.75,
+          "observation_count": 217,
           "first_date": "2026-01-02",
-          "last_date": "2026-10-10"
-        },
-        {
-          "currency": "THB",
-          "amount": 0,
-          "average_rate": 0.20976969326781755,
-          "cny_amount": 0,
-          "observation_count": 202,
-          "first_date": "2026-01-02",
-          "last_date": "2026-10-10"
-        },
-        {
-          "currency": "TWD",
-          "amount": 0,
-          "average_rate": 0.2147348464125454,
-          "cny_amount": 0,
-          "observation_count": 202,
-          "first_date": "2026-01-02",
-          "last_date": "2026-10-10"
+          "last_date": "2026-11-01"
         },
         {
           "currency": "USD",
           "amount": 0,
-          "average_rate": 6.818186623035091,
+          "average_rate": 6.808541456125848,
           "cny_amount": 0,
-          "observation_count": 202,
+          "observation_count": 217,
           "first_date": "2026-01-02",
-          "last_date": "2026-10-10"
+          "last_date": "2026-11-01"
         }
       ],
       "year": 2026,
       "start_date": "2026-01-01",
-      "requested_through": "2026-10-10",
-      "observed_through": "2026-10-10",
+      "requested_through": "2026-11-01",
+      "observed_through": "2026-11-01",
       "source": "Yahoo Finance",
       "price_field": "Close",
       "non_trading_days": "excluded",
       "errors": {},
-      "calculatedAt": "2026/10/10 21:45:01"
+      "calculatedAt": "2026/11/1 11:09:39"
     }
   }
 }

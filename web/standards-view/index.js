@@ -105,7 +105,7 @@
         sharedModule.$('#variable-standards-table').innerHTML = html || '<p class="empty">暂无定居地点</p>';
 
         html = '';
-        for (const curr of Object.keys(values.fixed[state.region] || {})) {
+        for (const curr of locationsModule.orderedCurrencies(Object.keys(values.fixed[state.region] || {}))) {
           const isCustomCurr = !state.monthStandardsSnapshot && (defs.fixed[state.region][curr] === undefined);
           html += sharedModule.budgetRowHtml({
             color: extraColor[curr] || '#7b61ff',
@@ -187,7 +187,7 @@
           const regionStd = (values.fixed || {})[region] || {};
           const savedRegion = (defs.fixed || {})[region] || {};
           html = '';
-          for (const curr of Object.keys(regionStd)) {
+          for (const curr of locationsModule.orderedCurrencies(Object.keys(regionStd))) {
             const isCustomCurr = savedRegion[curr] === undefined;
             html += sharedModule.budgetRowHtml({
               color: extraColor[curr] || '#7b61ff',
@@ -298,13 +298,10 @@
         service.renderMonthStandardsPanel();
         service.renderDefaultsPanel();
         const regionText = `${locationsModule.regionName(state.region)}（${state.region}）`;
-        const regionHint = sharedModule.$('#options-region-hint');
-        if (regionHint) regionHint.textContent = `固定预算按 ${regionText} 计算`;
         const fixedRegionLabel = sharedModule.$('#fixed-region-label');
         if (fixedRegionLabel) fixedRegionLabel.textContent = `· ${regionText}`;
         const monthLabel = sharedModule.$('#standards-month-label');
         if (monthLabel) monthLabel.textContent = `${state.year}年${state.month}月`;
-        service.renderStandardsHint();
         standardsEditorModule.syncStandardsModeUI();
       }
 
@@ -315,91 +312,6 @@
         if (!keys.length) return locationsModule.locationCurrency(loc);
         const current = locationsModule.locationCurrency(loc);
         return holder[current] != null ? current : keys[0];
-      }
-
-      /** 当月标准与默认值的差异文案（默认标准区域有独立提示，这里只讲当月） */
-      function renderStandardsHint() {
-        const defs = state.meta.default_standards;
-        const st = state.standards;
-        const hint = sharedModule.$('#standards-hint');
-        if (!hint) return;
-        const dirtyHint = (text) => {
-          hint.textContent = text;
-          hint.classList.add('dirty');
-        };
-        const cleanHint = (text) => {
-          hint.textContent = text;
-          hint.classList.remove('dirty');
-        };
-
-        if (state.monthStandardsSnapshot) {
-          cleanHint('该月份使用保存默认值之前的完整预算标准快照');
-          return;
-        }
-        let diffs = 0;
-        let customLocCount = 0;
-        const count = (a, b) => { if (Number(a) !== Number(b)) diffs += 1; };
-
-        for (const loc of Object.keys(defs.variable)) {
-          const curr = service.findStdCurrency(defs.variable[loc], loc);
-          const holder = (st.variable[loc] || {});
-          if (holder[curr] == null) diffs += 1;
-          else count(holder[curr], defs.variable[loc][curr]);
-        }
-        for (const curr of Object.keys(st.fixed[state.region] || {})) {
-          if (defs.fixed[state.region] && defs.fixed[state.region][curr] !== undefined) {
-            count(st.fixed[state.region][curr], defs.fixed[state.region][curr]);
-          } else {
-            diffs += 1; // 自定义币种计为已修改
-          }
-        }
-        for (const loc of Object.keys(st.variable || {})) {
-          if (!defs.variable[loc]) customLocCount += 1; // 当月新建的定居地点
-        }
-        if (state.includeTravel) {
-          for (const loc of Object.keys(defs.travel)) {
-            const curr = service.findStdCurrency(defs.travel[loc], loc);
-            const cur = ((st.travel[loc] || {})[curr]) || {};
-            const def = defs.travel[loc][curr];
-            count(cur.daily, def.daily);
-            count(cur.once, def.once);
-          }
-          for (const loc of Object.keys(st.travel || {})) {
-            if (!defs.travel[loc]) customLocCount += 1; // 当月新建的旅居地点
-          }
-        }
-        const defExtra = defs.extra || {};
-        standardsModule.ensureExtraStandards();
-        for (const curr of sharedModule.EXTRA_CURRENCIES) {
-          count(st.extra[curr], defExtra[curr] != null ? defExtra[curr] : 0);
-        }
-        const customCount = (locationsModule.activeCustomLocations() || []).filter((c) => (
-          state.includeTravel || c.category !== 'travel'
-        )).length;
-        const customTotal = Math.max(customCount, customLocCount);
-        const fixedCustom = Object.keys(locationsModule.activeCustomCurrencies() || {}).length;
-
-        if (diffs > 0) {
-          dirtyHint(`已修改 ${diffs} 处当月标准（仅当月生效；要改长期默认请切到「默认标准」）`);
-        } else if (customTotal || fixedCustom) {
-          dirtyHint('当月有新建标准（仅当月生效；要长期使用请切到「默认标准」并保存）');
-        } else if (state.meta && state.meta.defaults_customized) {
-          cleanHint('默认标准读取自 data/defaults.json');
-        } else {
-          cleanHint('默认标准读取自内置出厂值');
-        }
-      }
-
-      /** 标准发生变化（修改/恢复/切换区域/新建删除）后，撤销确认，要求用户重新核对 */
-      function invalidateConfirmation() {
-        state.standardsConfirmed = false;
-        const chk = sharedModule.$('#chk-standards-confirmed');
-        if (chk) chk.checked = false;
-        const panel = sharedModule.$('#options-panel');
-        if (panel) {
-          panel.classList.remove('confirmed');
-          panel.classList.remove('attention');
-        }
       }
 
       Object.assign(service, {
@@ -414,8 +326,6 @@
         updateDefaultsScopeHint,
         renderStandards,
         findStdCurrency,
-        renderStandardsHint,
-        invalidateConfirmation,
       });
 
       return service;

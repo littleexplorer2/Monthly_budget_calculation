@@ -228,7 +228,7 @@
         const summary = sharedModule.$('#result-summary');
         if (summary) summary.innerHTML = `<div class="empty-card">
           <div class="empty-title">还没有计算结果</div>
-          <p>先确认预算标准，添加行程，再点「计算预算」。</p>
+          <p>请先添加行程；系统会自动更新预算，也可使用上方「更新预算」按钮手动刷新。</p>
         </div>`;
         const warns = sharedModule.$('#result-warnings');
         if (warns) warns.innerHTML = '';

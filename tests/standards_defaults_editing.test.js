@@ -375,7 +375,7 @@ test('普通状态持久化把旧差异覆盖升级为当前月份完整标准�
     '另一标签修改默认值后，已保存月份不得按新默认值重新解释');
 });
 
-test('月度计算始终提交用户已确认的完整标准快照，不受并发默认值变化影响', () => {
+test('月度计算始终提交当前完整标准快照，不受并发默认值变化影响', () => {
   const app = loadAppForTest();
   app.seed();
   app.state.standards.variable.Shenzhen.CNY = 95;

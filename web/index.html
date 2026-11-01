@@ -6,7 +6,7 @@
   <title>每月预算</title>
   <style>[hidden]{display:none!important}</style>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/style.css?v=20260928a">
+  <link rel="stylesheet" href="css/style.css?v=20261101">
 </head>
 <body>
   <noscript>
@@ -14,102 +14,80 @@
   </noscript>
 
   <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">¥</div>
-        <div>
-          <div class="brand-name">每月预算</div>
-          <div class="brand-sub">Budget</div>
-        </div>
-      </div>
-      <nav class="side-nav">
-        <button type="button" class="side-nav-item active" data-tab="standards">
-          <span class="nav-ico">◎</span>预算标准
-        </button>
-        <button type="button" class="side-nav-item" data-tab="itinerary">
-          <span class="nav-ico">▦</span>行程安排
-        </button>
-        <button type="button" class="side-nav-item" data-tab="rates">
-          <span class="nav-ico">↗</span>汇率走势
-        </button>
-        <button type="button" class="side-nav-item" data-tab="result">
-          <span class="nav-ico">●</span>计算结果
-        </button>
-        <button type="button" class="side-nav-item" data-tab="analysis">
-          <span class="nav-ico">▣</span>全年总览
-        </button>
-      </nav>
-      <button type="button" id="btn-data-manager" class="side-data">数据管理</button>
-    </aside>
-
-    <nav class="bottom-nav" aria-label="页面导航">
-      <button type="button" class="side-nav-item active" data-tab="standards">
-        <span class="nav-ico">◎</span>标准
-      </button>
-      <button type="button" class="side-nav-item" data-tab="itinerary">
-        <span class="nav-ico">▦</span>行程
-      </button>
-      <button type="button" class="side-nav-item" data-tab="rates">
-        <span class="nav-ico">↗</span>汇率
-      </button>
-      <button type="button" class="side-nav-item" data-tab="result">
-        <span class="nav-ico">●</span>结果
-      </button>
-      <button type="button" class="side-nav-item" data-tab="analysis">
-        <span class="nav-ico">▣</span>全年
-      </button>
-    </nav>
-
     <div class="workspace">
-      <header class="app-top">
-        <div class="period monthly-context">
-          <button type="button" id="btn-prev-month" class="period-btn" title="上一月">‹</button>
-          <span id="month-label" class="period-label">----</span>
-          <button type="button" id="btn-next-month" class="period-btn" title="下一月">›</button>
-        </div>
-        <button type="button" id="btn-this-month" class="ghost-btn monthly-context">本月</button>
-        <div class="top-actions">
-          <button type="button" id="btn-data-manager-top" class="ghost-btn only-mobile">数据</button>
-          <button type="button" id="btn-defaults-modal" class="ghost-btn monthly-context" title="编辑保存在服务器的默认预算标准（写入 data/defaults.json）">⚙ 默认预算标准</button>
-          <button type="button" id="btn-calculate" class="cta monthly-context">计算预算</button>
+      <header class="site-header">
+        <div class="site-header-inner">
+          <div class="brand" aria-label="每月预算">
+            <div class="brand-mark">¥</div>
+            <div>
+              <div class="brand-name">每月预算</div>
+              <div class="brand-sub">Budget planner</div>
+            </div>
+          </div>
+          <nav class="primary-nav" aria-label="主要功能">
+            <button type="button" class="primary-nav-item active" data-section="budget">
+              <span class="nav-ico">●</span><span>预算计算</span>
+            </button>
+            <button type="button" class="primary-nav-item" data-section="dashboard">
+              <span class="nav-ico">▥</span><span>统计面板</span>
+            </button>
+          </nav>
+          <div class="header-period monthly-context" aria-label="预算月份">
+            <div class="period">
+              <button type="button" id="btn-prev-month" class="period-btn" title="上一月">‹</button>
+              <span id="month-label" class="period-label">----</span>
+              <button type="button" id="btn-next-month" class="period-btn" title="下一月">›</button>
+            </div>
+            <button type="button" id="btn-this-month" class="ghost-btn">本月</button>
+          </div>
+          <button type="button" id="btn-data-manager" class="header-data-btn">数据管理</button>
         </div>
       </header>
 
-      <div class="filter-bar monthly-context" id="options-panel">
-        <div class="filter-group">
-          <span class="filter-label">居住区域</span>
-          <div class="seg" id="region-seg">
-            <button type="button" class="seg-btn" data-region="Mainland">内地</button>
-            <button type="button" class="seg-btn" data-region="Overseas">境外</button>
+      <div class="filter-bar" id="options-panel">
+        <div class="context-options budget-only">
+          <div class="filter-group">
+            <span class="filter-label">居住区域</span>
+            <div class="seg" id="region-seg">
+              <button type="button" class="seg-btn" data-region="Mainland">内地</button>
+              <button type="button" class="seg-btn" data-region="Overseas">境外</button>
+            </div>
           </div>
-        </div>
-        <div class="filter-group">
-          <span class="filter-label">包含旅居</span>
-          <label class="switch">
-            <input type="checkbox" id="chk-include-travel">
-            <span class="switch-ui"></span>
-          </label>
-          <div id="travel-picker-wrap" hidden>
-            <button type="button" id="travel-picker-btn" class="ghost-btn dd-btn">旅居地点 ▾</button>
-            <div class="dropdown-menu" id="travel-picker-menu" hidden>
-              <div class="dm-head">
-                <span>选择旅居地点</span>
-                <span>
-                  <button type="button" id="tp-all" class="text-btn">全选</button>
-                  <button type="button" id="tp-none" class="text-btn">清空</button>
-                </span>
+          <div class="filter-group">
+            <span class="filter-label">包含旅居</span>
+            <label class="switch">
+              <input type="checkbox" id="chk-include-travel">
+              <span class="switch-ui"></span>
+            </label>
+            <div id="travel-picker-wrap" hidden>
+              <button type="button" id="travel-picker-btn" class="ghost-btn dd-btn">旅居地点 ▾</button>
+              <div class="dropdown-menu" id="travel-picker-menu" hidden>
+                <div class="dm-head">
+                  <span>选择旅居地点</span>
+                  <span>
+                    <button type="button" id="tp-all" class="text-btn">全选</button>
+                    <button type="button" id="tp-none" class="text-btn">清空</button>
+                  </span>
+                </div>
+                <div id="tp-list"></div>
               </div>
-              <div id="tp-list"></div>
             </div>
           </div>
         </div>
-        <div class="filter-group filter-confirm">
-          <label class="switch">
-            <input type="checkbox" id="chk-standards-confirmed">
-            <span class="switch-ui"></span>
-          </label>
-          <span class="filter-label">已确认预算标准</span>
-          <span class="muted" id="options-region-hint"></span>
+
+        <nav class="section-nav budget-only" aria-label="预算计算步骤">
+          <button type="button" class="section-nav-item active" data-tab="standards">预算标准</button>
+          <button type="button" class="section-nav-item" data-tab="itinerary">行程安排</button>
+          <button type="button" class="section-nav-item" data-tab="result">计算结果</button>
+        </nav>
+        <nav class="dashboard-nav dashboard-only" aria-label="统计面板分区">
+          <button type="button" class="dashboard-nav-item active" data-dashboard-tab="analysis">年度总览</button>
+          <button type="button" class="dashboard-nav-item" data-dashboard-tab="rates">汇率走势</button>
+        </nav>
+
+        <div class="context-actions budget-only">
+          <button type="button" id="btn-defaults-modal" class="ghost-btn" title="编辑保存在服务器的默认预算标准（写入 data/defaults.json）">⚙ 默认预算标准</button>
+          <button type="button" id="btn-calculate" class="cta">更新预算</button>
         </div>
       </div>
 
@@ -121,13 +99,8 @@
       <main class="content">
         <section id="tab-standards" class="tab-panel active">
           <div class="view-head">
-            <div>
-              <h1>当月预算标准 <span class="muted" id="standards-month-label"></span></h1>
-              <p class="lede">只影响本月（写入 <code>data/app-state.json</code>），不会改动服务器默认标准与其它月份。
-                服务器默认标准请用顶栏「⚙ 默认预算标准」按钮打开弹窗编辑。</p>
-            </div>
+            <h1>当月预算标准 <span class="muted" id="standards-month-label"></span></h1>
             <div class="view-actions">
-              <span id="standards-hint" class="hint">本月标准</span>
               <button type="button" id="btn-reset-standards" class="ghost-btn">恢复默认</button>
               <button type="button" id="btn-reset-factory" class="ghost-btn danger">恢复出厂默认</button>
             </div>
@@ -157,7 +130,7 @@
               <div class="sheet-head">
                 <h2>额外预算</h2>
               </div>
-              <p class="sheet-rule">CNY / USD / HKD 月额 × 当月平均汇率，每月一次，默认 0。</p>
+              <p class="sheet-rule">CNY / HKD / USD 月额 × 当月平均汇率，每月一次，默认 0。</p>
               <div id="extra-standards-table" class="row-list"></div>
             </article>
 
@@ -248,40 +221,27 @@
           </div>
         </section>
 
-        <section id="tab-rates" class="tab-panel">
-          <div class="view-head">
+        <section id="tab-dashboard" class="tab-panel dashboard-panel">
+          <div class="dashboard-heading">
             <div>
-              <h1 id="rates-title">汇率走势</h1>
-              <p class="lede">兑人民币每日汇率，数据来自 Yahoo Finance。点「重新拉取」会忽略本地缓存并重新下载。</p>
+              <span class="eyebrow">FINANCIAL OVERVIEW</span>
+              <h1>预算统计面板</h1>
+              <p class="lede">集中查看本月计算使用的汇率、全年预算与各月预算变化。</p>
             </div>
-            <div class="view-actions">
-              <label class="switch-inline">
-                <input type="checkbox" id="chk-show-cny">
-                <span>显示 CNY</span>
-              </label>
-              <button type="button" id="btn-refresh-rates" class="ghost-btn">重新拉取</button>
-            </div>
+            <span class="dashboard-badge">数据随预算计算自动更新</span>
           </div>
-          <div id="rates-charts" class="rates-charts"></div>
-          <article class="sheet">
-            <h2>月度统计</h2>
-            <div id="rates-stats-table" class="row-list"></div>
-          </article>
-          <p class="footnote">周末/节假日无数据日取最近可用值；当月未到日期按本月截至今日的日均汇率估算。仅供预算估算。</p>
-        </section>
 
-        <section id="tab-analysis" class="tab-panel">
-          <div class="view-head">
-            <div>
-              <h1>全年预算与月度比较</h1>
-              <p class="lede">全年预算使用年初至截止日的实际交易日收盘汇率；右侧独立比较已计算的各月预算。</p>
+          <section id="tab-analysis" class="dashboard-block active">
+            <div class="view-head compact-head">
+              <div>
+                <h1>全年预算与月度比较</h1>
+                <p class="lede">全年预算使用年初至截止日的实际交易日收盘汇率；右侧独立比较已计算的各月预算。</p>
+              </div>
+              <div class="annual-year-controls">
+                <label for="annual-year">预算年份</label>
+                <select id="annual-year" class="ghost-select" aria-label="全年预算年份"></select>
+              </div>
             </div>
-            <div class="annual-year-controls">
-              <label for="annual-year">预算年份</label>
-              <select id="annual-year" class="ghost-select" aria-label="全年预算年份"></select>
-              <button type="button" id="btn-refresh-annual-rates" class="ghost-btn">刷新收盘汇率</button>
-            </div>
-          </div>
 
           <div class="annual-dashboard">
             <article class="sheet annual-budget-card">
@@ -313,7 +273,7 @@
               </div>
               <p id="annual-budget-note" class="footnote">非交易日不填充；年平均按 Yahoo Finance 实际 Close 观测直接求算术平均。</p>
               <div class="annual-budget-actions">
-                <button type="button" id="btn-calculate-annual" class="cta">计算全年预算</button>
+                <button type="button" id="btn-calculate-annual" class="cta">更新全年预算</button>
               </div>
             </article>
 
@@ -349,10 +309,33 @@
               </div>
               <div id="analysis-legend" class="analysis-legend"></div>
               <div id="analysis-chart" class="analysis-chart"></div>
-              <div id="analysis-data-table" class="analysis-data-table"></div>
-              <p id="analysis-empty" class="empty" hidden>还没有可绘制的月份。请先在各月添加行程并点击「计算预算」，本页会自动读取已保存结果。</p>
+              <p id="analysis-empty" class="empty" hidden>还没有可绘制的月份。请先在各月添加行程并更新预算，本页会自动读取已保存结果。</p>
             </article>
           </div>
+          </section>
+
+          <section id="tab-rates" class="dashboard-block">
+            <div class="view-head compact-head">
+              <div>
+                <h1 id="rates-title">汇率走势</h1>
+                <p class="lede">更新预算时自动取得汇率；人民币默认展示离岸人民币兑在岸人民币（CNH/CNY）走势。</p>
+              </div>
+            </div>
+            <div id="rates-empty" class="empty-card rates-empty">
+              <div class="empty-orbit">↗</div>
+              <div class="empty-title">本月还没有计算汇率</div>
+              <p>请先在“预算计算”中添加行程并更新预算，这里会自动展示本次实际使用的汇率趋势。</p>
+            </div>
+            <div id="rates-content" hidden>
+              <div id="rates-charts" class="rates-charts"></div>
+              <article class="sheet">
+                <h2>月度统计</h2>
+                <div id="rates-stats-table" class="row-list"></div>
+              </article>
+              <p id="rates-source-note" class="footnote">汇率随预算计算自动获取。</p>
+              <p class="footnote">周末/节假日无数据日取最近可用值；当月未到日期按本月截至今日的日均汇率估算。仅供预算估算。</p>
+            </div>
+          </section>
         </section>
 
         <section id="tab-result" class="tab-panel">
@@ -387,7 +370,7 @@
                 <h2>额外预算明细</h2>
                 <span id="extra-details-total" class="sheet-total"></span>
               </div>
-              <p class="sheet-rule">与固定预算分开单列（CNY / USD / HKD，每月各算一次，默认均为 0）。</p>
+              <p class="sheet-rule">与固定预算分开单列（CNY / HKD / USD，每月各算一次，默认均为 0）。</p>
               <div id="extra-details-table"></div>
             </article>
           </div>
@@ -417,12 +400,12 @@
         <h3>数据管理</h3>
         <button type="button" id="btn-data-close" class="period-btn" title="关闭">✕</button>
       </div>
-      <p class="lede">行程、默认标准、标准修改、计算结果与汇率缓存在项目 data/ 目录。关闭最后一个网页时会自动完整保存；也可在此提交并上传到已配置的 Git 远程仓库。</p>
+      <p class="lede">行程、预算标准与计算结果保存在项目 data/ 目录。关闭最后一个网页时会自动完整保存；上传时同步预算/行程状态与用户默认标准，汇率缓存按需重新拉取。</p>
       <div id="data-modal-list" class="data-list"></div>
-      <p id="data-upload-status" class="data-upload-status">上传仅包含 data/，需要预先配置远程仓库和 Git 登录。</p>
+      <p id="data-upload-status" class="data-upload-status">上传包含 data/app-state.json 与 data/defaults.json，不包含 data/rates/；需要预先配置远程仓库和 Git 登录。</p>
       <div class="modal-foot">
         <button type="button" id="btn-data-clear-all" class="ghost-btn danger">清空全部</button>
-        <button type="button" id="btn-data-upload" class="ghost-btn primary">保存并上传全部数据</button>
+        <button type="button" id="btn-data-upload" class="ghost-btn primary">保存并上传预算数据</button>
         <button type="button" id="btn-data-close2" class="ghost-btn">关闭</button>
       </div>
     </div>
@@ -453,6 +436,7 @@
   <script src="monthly/index.js"></script>
   <script src="annual/index.js"></script>
   <script src="analysis/index.js"></script>
+  <script src="navigation/index.js"></script>
   <script src="data/index.js"></script>
   <script src="travel/index.js"></script>
   <script src="shell/index.js"></script>

@@ -251,7 +251,7 @@ def _merge_fixed_standards(override, defaults_snapshot):
 
 
 def _merge_extra_standards(override, defaults_snapshot):
-    """合并额外预算覆盖。仅允许 CNY / USD / HKD 三个币种。"""
+    """合并额外预算覆盖。仅允许 CNY / HKD / USD 三个币种。"""
     override = override or {}
     if not isinstance(override, dict):
         raise ValueError("额外预算覆盖必须是字典")
@@ -263,7 +263,7 @@ def _merge_extra_standards(override, defaults_snapshot):
         merged[curr] = float(amount)
     for curr in override:
         if curr not in merged:
-            raise ValueError(f"未知的额外预算币种：{curr}（仅支持 CNY / USD / HKD）")
+            raise ValueError(f"未知的额外预算币种：{curr}（仅支持 CNY / HKD / USD）")
     return merged
 
 

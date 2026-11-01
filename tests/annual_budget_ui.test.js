@@ -74,7 +74,10 @@ test('全年行情展示实际 Close 年平均、观测日数量和覆盖日期'
   assert.ok(request, '应请求年度收盘汇率接口');
   assert.equal(request.method, 'GET');
   assert.match(request.url, new RegExp(`year=${year}`));
-  assert.match(decodeURIComponent(request.url), /currencies=CNY,HKD,THB,TWD,USD/);
+  assert.match(decodeURIComponent(request.url), /currencies=CNY,HKD,USD/);
+  assert.equal(doc.querySelectorAll('#annual-budget-rows tr').length, 3, '全年预算只显示 CNY / HKD / USD');
+  assert.equal(annualRow(doc, 'THB'), null);
+  assert.equal(annualRow(doc, 'TWD'), null);
 });
 
 test('全年金额输入不重建节点、不丢焦点，并使旧结果失效', async () => {

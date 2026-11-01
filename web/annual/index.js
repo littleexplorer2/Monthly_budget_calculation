@@ -25,35 +25,8 @@
         return state.annualBudgetsByYear[year];
       }
 
-      function addStandardsCurrencies(target, standards) {
-        if (!standards || typeof standards !== 'object') return;
-        for (const category of ['variable', 'fixed', 'travel']) {
-          for (const values of Object.values(standards[category] || {})) {
-            if (!values || typeof values !== 'object') continue;
-            Object.keys(values).forEach((currency) => {
-              if (/^[A-Z]{2,6}$/.test(currency)) target.add(currency);
-            });
-          }
-        }
-        Object.keys(standards.extra || {}).forEach((currency) => {
-          if (/^[A-Z]{2,6}$/.test(currency)) target.add(currency);
-        });
-        (standards.custom_locations || []).forEach((item) => {
-          if (item && /^[A-Z]{2,6}$/.test(item.currency || '')) target.add(item.currency);
-        });
-        Object.keys(standards.custom_currencies || {}).forEach((currency) => {
-          if (/^[A-Z]{2,6}$/.test(currency)) target.add(currency);
-        });
-      }
-
       function annualCurrencies() {
-        const currencies = new Set((state.meta && state.meta.currencies) || []);
-        Object.keys((state.meta && state.meta.currency_names) || {}).forEach((currency) => currencies.add(currency));
-        service.addStandardsCurrencies(currencies, state.meta && state.meta.default_standards);
-        Object.keys(service.annualBudgetAmounts()).forEach((currency) => currencies.add(currency));
-        return Array.from(currencies)
-          .filter((currency) => /^[A-Z]{2,6}$/.test(currency))
-          .sort((a, b) => (a === 'CNY' ? -1 : b === 'CNY' ? 1 : a.localeCompare(b)));
+        return locationsModule.orderedCurrencies(['CNY', 'HKD', 'USD']);
       }
 
       function availableAnnualYears() {
@@ -243,11 +216,12 @@
         }
       }
 
-      async function calculateAnnualBudget() {
-        if (state.busy) return;
+      async function calculateAnnualBudget(options = {}) {
+        const automatic = !!(options && options.automatic);
+        if (state.busy) return false;
         if (state.annualLoading) {
-          feedbackModule.toast('全年收盘汇率仍在刷新，请完成后再计算', 'warn');
-          return;
+          if (!automatic) feedbackModule.toast('全年收盘汇率仍在刷新，请完成后再计算', 'warn');
+          return false;
         }
         const year = service.annualYearKey();
         const amounts = {};
@@ -262,10 +236,13 @@
             amounts[input.dataset.annualCurrency] = amount;
           }
         });
-        if (invalid) { feedbackModule.toast('全年金额必须是非负有限数', 'warn'); return; }
+        if (invalid) {
+          if (!automatic) feedbackModule.toast('全年金额必须是非负有限数', 'warn');
+          return false;
+        }
 
         state.busy = true;
-        feedbackModule.setLoading(true, `正在计算 ${year} 年全年预算…`);
+        if (!automatic) feedbackModule.setLoading(true, `正在更新 ${year} 年全年预算…`);
         try {
           const result = await apiModule.api('/api/annual-budget', {
             method: 'POST', body: { year: Number(year), amounts }, timeout: 180000,
@@ -275,20 +252,23 @@
           state.annualResultsByYear[year] = persistenceModule.compactAnnualResultsMap({ [year]: result })[year];
           const saved = await persistenceModule.persist('now', 'annual');
           service.renderAnnualBudget();
-          feedbackModule.toast(saved ? '全年预算计算完成并已保存' : '计算完成，但保存到服务器失败', saved ? 'success' : 'warn');
+          if (!automatic || !saved) {
+            feedbackModule.toast(saved ? '全年预算已更新并保存' : '全年预算已更新，但保存到服务器失败', saved ? 'success' : 'warn');
+          }
+          return true;
         } catch (err) {
-          feedbackModule.toast(err.message, 'error');
+          feedbackModule.toast(automatic ? `自动更新全年预算失败：${err.message}` : err.message, 'error');
           networkModule.maybeShowNetworkWarning(err.message);
+          return false;
         } finally {
           state.busy = false;
-          feedbackModule.setLoading(false);
+          if (!automatic) feedbackModule.setLoading(false);
         }
       }
 
       Object.assign(service, {
         annualYearKey,
         annualBudgetAmounts,
-        addStandardsCurrencies,
         annualCurrencies,
         availableAnnualYears,
         fillAnnualYearSelect,

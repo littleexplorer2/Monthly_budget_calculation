@@ -4,61 +4,34 @@
 (function register(registry) {
   'use strict';
   registry.shell = Object.freeze({
-    dependencies: Object.freeze(["analysis","annual","http","calendar","data","feedback","itinerary","locations","monthly","network","persistence","rates","results","shared","standards","standardsEditor","standardsView","state","travel"]),
-    create({ analysis: analysisModule, annual: annualModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["analysis","annual","http","calendar","data","feedback","itinerary","locations","monthly","navigation","network","persistence","rates","results","shared","standards","standardsEditor","standardsView","state","travel"]),
+    create({ analysis: analysisModule, annual: annualModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       /* --------------------------------------------------------------------------
        * 页签与月份切换
        * ------------------------------------------------------------------------ */
       function switchTab(name) {
-        sharedModule.$$('.side-nav-item').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
-        sharedModule.$$('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${name}`));
-        if (document.body && document.body.classList) document.body.classList.toggle('annual-view', name === 'analysis');
-        if (name === 'rates') {
-          ratesModule.loadRates();
-          setTimeout(ratesModule.resizeRateCharts, 60);
-        }
-        if (name === 'analysis') {
-          annualModule.renderAnnualBudget();
-          annualModule.loadAnnualRates();
-          analysisModule.renderAnalysis();
-          setTimeout(analysisModule.resizeAnalysisChart, 60);
-        }
+        return navigationModule.switchTab(name);
       }
 
       function renderAll() {
-        sharedModule.$('#month-label').textContent = `${state.year}年${sharedModule.pad2(state.month)}月`;
-        monthlyModule.syncOptionsUI();
-        sharedModule.$('#itinerary-month').textContent = `${state.year}年${state.month}月`;
-        sharedModule.$('#rates-title').textContent = `${state.year}年${state.month}月 汇率走势（兑人民币）`;
-        if (state.ratesMonth !== monthlyModule.monthKey()) {
-          state.ratesData = null;
-          state.ratesFromCalc = false;
-          ratesModule.destroyRateCharts();
-          const charts = sharedModule.$('#rates-charts');
-          if (charts) charts.innerHTML = '';
-          const stats = sharedModule.$('#rates-stats-table');
-          if (stats) stats.innerHTML = '';
-        }
-        calendarModule.renderCalendar();
-        itineraryModule.renderItinerary();
-        calendarModule.updateManualDefaults();
-        // 正在汇率页时切换月份，立即重新拉取当月汇率
-        if (sharedModule.$('#tab-rates').classList.contains('active') && !state.ratesData) {
-          ratesModule.loadRates();
-        }
-        if (sharedModule.$('#tab-analysis') && sharedModule.$('#tab-analysis').classList.contains('active')) {
-          annualModule.renderAnnualBudget();
-          analysisModule.renderAnalysis();
-        }
+        monthlyModule.renderMonthContext();
       }
 
       /* --------------------------------------------------------------------------
        * 事件绑定
        * ------------------------------------------------------------------------ */
       function bindEvents() {
-        sharedModule.$$('.side-nav-item').forEach((t) => t.addEventListener('click', () => service.switchTab(t.dataset.tab)));
+        sharedModule.$$('.primary-nav-item').forEach((button) => {
+          button.addEventListener('click', () => navigationModule.openSection(button.dataset.section));
+        });
+        sharedModule.$$('.section-nav-item').forEach((button) => {
+          button.addEventListener('click', () => navigationModule.openBudgetTab(button.dataset.tab));
+        });
+        sharedModule.$$('.dashboard-nav-item').forEach((button) => {
+          button.addEventListener('click', () => navigationModule.openDashboardTab(button.dataset.dashboardTab));
+        });
 
         // 月份导航
         sharedModule.$('#btn-prev-month').addEventListener('click', () => monthlyModule.changeMonth(-1));
@@ -74,7 +47,6 @@
           // 分段高亮即时更新
           sharedModule.$$('#region-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.region === state.region));
           standardsViewModule.renderStandards();          // 刷新固定预算表（仅显示新区域）
-          standardsViewModule.invalidateConfirmation();   // 应用的标准集发生变化，需重新确认
         });
 
         // 计算
@@ -122,7 +94,7 @@
           if (btn && btn.dataset.loc) standardsEditorModule.deleteCustomStandard(btn.dataset.loc);
         });
 
-        // 默认预算标准弹窗：顶栏按钮打开，✕ / 点击遮罩关闭，弹窗内保存或放弃
+        // 默认预算标准弹窗：上下文栏按钮打开，✕ / 点击遮罩关闭，弹窗内保存或放弃
         sharedModule.$('#btn-defaults-modal').addEventListener('click', standardsEditorModule.openDefaultsModal);
         sharedModule.$('#btn-defaults-close').addEventListener('click', standardsEditorModule.requestCloseDefaultsModal);
         sharedModule.$('#defaults-modal').addEventListener('click', (ev) => {
@@ -158,17 +130,6 @@
         sharedModule.$('#btn-reset-standards').addEventListener('click', standardsEditorModule.resetMonthToDefaults);
         sharedModule.$('#btn-reset-factory').addEventListener('click', standardsEditorModule.restoreFactoryDefaults);
 
-        // 确认预算标准（选项面板）
-        sharedModule.$('#chk-standards-confirmed').addEventListener('change', (ev) => {
-          state.standardsConfirmed = ev.target.checked;
-          const panel = sharedModule.$('#options-panel');
-          if (panel) {
-            panel.classList.toggle('confirmed', ev.target.checked);
-            panel.classList.remove('attention');
-          }
-          if (ev.target.checked) feedbackModule.toast('已确认预算标准，可以添加行程并计算', 'success');
-        });
-
         // 旅居开关与选择
         sharedModule.$('#chk-include-travel').addEventListener('change', (ev) => {
           state.includeTravel = !!ev.target.checked;
@@ -176,7 +137,6 @@
           monthlyModule.updateTravelUiVisibility();
           travelModule.renderTravelPicker();
           calendarModule.renderLocChips();
-          standardsViewModule.invalidateConfirmation();
         });
         sharedModule.$('#travel-picker-btn').addEventListener('click', (ev) => {
           ev.stopPropagation();
@@ -281,9 +241,6 @@
           feedbackModule.toast('已清空本月行程', 'success');
         });
 
-        // 汇率重新拉取 / CNY 显隐 / 窗口尺寸自适应 / 网络重检
-        sharedModule.$('#btn-refresh-rates').addEventListener('click', () => ratesModule.loadRates(true));
-        sharedModule.$('#chk-show-cny').addEventListener('change', () => { if (state.ratesData) ratesModule.renderRateCharts(); });
         window.addEventListener('resize', () => {
           ratesModule.resizeRateCharts();
           analysisModule.resizeAnalysisChart();
@@ -291,14 +248,14 @@
         sharedModule.$('#btn-network-retry').addEventListener('click', () => networkModule.runNetworkCheck(true));
 
         // 全年预算：年份/行情与月度页独立，金额仍走唯一状态持久化管线。
-        sharedModule.$('#annual-year').addEventListener('change', (ev) => {
+        sharedModule.$('#annual-year').addEventListener('change', async (ev) => {
           state.annualYear = Number(ev.target.value);
           state.annualRatesData = null;
           state.annualRatesYear = null;
           annualModule.renderAnnualBudget();
-          annualModule.loadAnnualRates();
+          await annualModule.loadAnnualRates();
+          await annualModule.calculateAnnualBudget({ automatic: true });
         });
-        sharedModule.$('#btn-refresh-annual-rates').addEventListener('click', () => annualModule.loadAnnualRates(true));
         sharedModule.$('#btn-calculate-annual').addEventListener('click', annualModule.calculateAnnualBudget);
         sharedModule.$('#annual-budget-rows').addEventListener('input', (ev) => {
           const input = ev.target.closest('input[data-annual-currency]');
@@ -341,7 +298,7 @@
       /* --------------------------------------------------------------------------
        * 初始化
        * ------------------------------------------------------------------------ */
-      async function init() {
+      async function init(options = {}) {
         feedbackModule.setLoading(false);
         feedbackModule.setElVisible(sharedModule.$('#data-modal'), false);
         feedbackModule.setElVisible(sharedModule.$('#add-std-modal'), false);
@@ -394,6 +351,7 @@
         standardsViewModule.renderStandards();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
+        navigationModule.renderNavigation();
         service.renderAll();
         if (state.calcResult) resultsModule.renderResult();
         else resultsModule.clearResult();
@@ -411,6 +369,15 @@
         }
         if (Array.isArray(state.meta.warnings) && state.meta.warnings.length) {
           feedbackModule.toast(state.meta.warnings[0], 'error');
+        }
+
+        if (!options.skipAutomaticUpdates) {
+          // 启动后以真实行情自动更新两类预算；没有行程的月份会安静跳过月度计算。
+          // 自动流程不会切换当前页签，手动「更新」按钮仍保留。
+          annualModule.renderAnnualBudget();
+          await annualModule.loadAnnualRates();
+          await annualModule.calculateAnnualBudget({ automatic: true });
+          await monthlyModule.calculate({ automatic: true });
         }
       }
 

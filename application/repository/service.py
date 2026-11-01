@@ -10,7 +10,7 @@ import subprocess
 import threading
 from application import config as app_config
 from application import contracts as app_contracts
-from application import rates as app_rates
+from application import defaults as app_defaults
 from application import state as app_state
 
 
@@ -23,6 +23,9 @@ _GIT_COMMAND_TIMEOUT = 30
 
 
 _GIT_PUSH_TIMEOUT = 120
+
+
+UPLOAD_DATA_FILES = ("app-state.json", "defaults.json")
 
 
 
@@ -93,23 +96,27 @@ def _repository_context(base_dir: Path) -> tuple[Path, str, str, str]:
 
 
 def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR) -> dict:
-    """提交 data/ 的全部新增、修改和删除，再推送当前分支。"""
+    """提交预算/行程状态与用户默认标准，再推送当前分支。
+
+    ``data/rates`` 是可从 Yahoo Finance 重建的本机缓存，既不暂存也不提交。
+    """
     with _repository_upload_lock:
         root, remote, branch, data_relative = _repository_context(base_dir)
         if not (base_dir / "data").is_dir():
             raise app_contracts.RepositoryUploadError("项目 data 目录不存在，无法上传")
 
-        # 等本地状态与汇率写盘完成，再一次性截取 data/ 快照进入 Git 暂存区。
-        with app_state.state_disk_lock, app_rates.rates_disk_lock:
-            _run_git(["add", "-A", "--", data_relative], root)
+        upload_paths = [f"{data_relative}/{name}" for name in UPLOAD_DATA_FILES]
+        # 等预算/行程状态写盘完成，再截取两个权威用户数据文件；汇率缓存不参与上传。
+        with app_state.state_disk_lock, app_defaults.defaults_disk_lock:
+            _run_git(["add", "-A", "--", *upload_paths], root)
         changed = _run_git(
-            ["diff", "--cached", "--quiet", "--", data_relative],
+            ["diff", "--cached", "--quiet", "--", *upload_paths],
             root,
             allowed_codes=(0, 1),
         ).returncode == 1
         if changed:
-            message = f"保存预算数据 {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            _run_git(["commit", "--only", "-m", message, "--", data_relative], root)
+            message = f"保存预算与行程数据 {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            _run_git(["commit", "--only", "-m", message, "--", *upload_paths], root)
 
         commit = _run_git(["rev-parse", "--short", "HEAD"], root).stdout.strip()
         try:
@@ -130,11 +137,11 @@ def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR) -> dict:
             "remote": remote,
             "branch": branch,
             "commit": commit,
-            "message": "数据已提交并上传" if changed else "数据没有新变化，远程仓库已同步",
+            "message": "预算与行程数据已提交并上传" if changed else "预算与行程数据没有新变化，远程仓库已同步",
         }
 
 
 
 def api_data_upload():
-    """将 data/ 的全部数据提交并推送到已配置的 Git 远程仓库。"""
+    """将预算/行程状态和用户默认标准提交并推送到 Git 远程仓库。"""
     return _upload_data_to_remote()

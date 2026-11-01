@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.rates = Object.freeze({
-    dependencies: Object.freeze(["http","feedback","locations","monthly","network","shared","state"]),
-    create({ http: apiModule, feedback: feedbackModule, locations: locationsModule, monthly: monthlyModule, network: networkModule, shared: sharedModule, state: stateModule }, service = {}) {
+    dependencies: Object.freeze(["locations","shared","state"]),
+    create({ locations: locationsModule, shared: sharedModule, state: stateModule }, service = {}) {
       const { state } = stateModule;
 
       /* --------------------------------------------------------------------------
@@ -29,22 +29,27 @@
         });
       }
 
+      function displayCurrencies(currencies) {
+        const ordered = locationsModule.orderedCurrencies(currencies).filter((currency) => currency !== 'CNY');
+        return ordered.includes('CNH') ? ['CNH', ...ordered.filter((currency) => currency !== 'CNH')] : ordered;
+      }
+
       function renderRateCharts() {
         if (!state.ratesData) return;
-        const showCNY = sharedModule.$('#chk-show-cny').checked;
         const container = sharedModule.$('#rates-charts');
         container.innerHTML = '';
         service.destroyRateCharts();
 
-        for (const c of Object.keys(state.ratesData.series)) {
-          if (c === 'CNY' && !showCNY) continue;
+        for (const c of service.displayCurrencies(Object.keys(state.ratesData.series))) {
 
           // 每张图独立容器
           const wrap = document.createElement('div');
           wrap.className = 'rate-chart-wrap';
           const title = document.createElement('div');
           title.className = 'rate-chart-title';
-          title.textContent = `${locationsModule.currencyName(c)}（${c}）兑人民币 · 每日走势`;
+          title.textContent = c === 'CNH'
+            ? '离岸人民币兑在岸人民币（CNH/CNY）· 每日走势'
+            : `${locationsModule.currencyName(c)}（${c}）兑人民币 · 每日走势`;
           const chartBox = document.createElement('div');
           chartBox.className = 'rate-chart';
           wrap.appendChild(title);
@@ -53,13 +58,26 @@
 
           const chart = echarts.init(chartBox);
           chart.setOption({
+            color: ['#12c48b', '#40c3f9', '#ff6faf', '#ffc053', '#7b93a4'],
             tooltip: {
               trigger: 'axis',
+              backgroundColor: 'rgba(12, 20, 28, 0.94)',
+              borderColor: 'rgba(255,255,255,0.14)',
+              textStyle: { color: '#f4f8fb' },
               valueFormatter: (v) => (v == null ? '-' : Number(v).toFixed(4)),
             },
             grid: { left: 64, right: 24, top: 30, bottom: 48 },
-            xAxis: { type: 'category', data: state.ratesData.dates, boundaryGap: false },
-            yAxis: { type: 'value', scale: true, name: `${c}/CNY` },
+            xAxis: {
+              type: 'category', data: state.ratesData.dates, boundaryGap: false,
+              axisLine: { lineStyle: { color: '#3a4b59' } },
+              axisLabel: { color: '#91a4b5' },
+            },
+            yAxis: {
+              type: 'value', scale: true, name: `${c}/CNY`,
+              nameTextStyle: { color: '#91a4b5' },
+              axisLabel: { color: '#91a4b5' },
+              splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+            },
             dataZoom: [
               { type: 'inside' },
               { type: 'slider', height: 16, bottom: 10 },
@@ -82,7 +100,7 @@
         const stats = state.ratesData.stats;
         let html = '<table class="detail-table"><thead><tr><th>币种</th><th class="num">起始</th><th class="num">期末</th>' +
           '<th class="num">均值</th><th class="num">最低</th><th class="num">最高</th></tr></thead><tbody>';
-        for (const c of Object.keys(stats)) {
+        for (const c of service.displayCurrencies(Object.keys(stats))) {
           const s = stats[c];
           const f = (v) => (v == null ? '-' : Number(v).toFixed(4));
           html += `<tr>
@@ -98,52 +116,46 @@
         sharedModule.$('#rates-stats-table').innerHTML = html;
       }
 
-      async function loadRates(force = false) {
-        // 计算响应附带的汇率可能只是「涉及币种」子集；进入汇率页时若数据来自计算，
-        // 仍重新拉取全量币种，保证折线图完整。force 还会让后端跳过内存/磁盘缓存、重新下载。
-        if (!force && state.ratesData && state.ratesMonth === monthlyModule.monthKey() && !state.ratesFromCalc) {
-          service.renderRateCharts();
-          service.renderRatesStats();
-          return;
+      function renderRatesPanel() {
+        const currentMonth = `${state.year}-${sharedModule.pad2(state.month)}`;
+        const current = state.ratesData && state.ratesMonth === currentMonth;
+        const empty = sharedModule.$('#rates-empty');
+        const content = sharedModule.$('#rates-content');
+        if (empty) empty.hidden = !!current;
+        if (content) content.hidden = !current;
+        if (!current) {
+          service.destroyRateCharts();
+          const charts = sharedModule.$('#rates-charts');
+          if (charts) charts.innerHTML = '';
+          const stats = sharedModule.$('#rates-stats-table');
+          if (stats) stats.innerHTML = '';
+          return false;
         }
-        const requestYear = state.year;
-        const requestMonth = state.month;
-        const requestMonthKey = `${requestYear}-${sharedModule.pad2(requestMonth)}`;
-        const requestId = state.rateRequestId + 1;
-        state.rateRequestId = requestId;
-        feedbackModule.setLoading(true, force
-          ? '正在从 Yahoo Finance 重新下载当月汇率（将覆盖本地缓存）…'
-          : '正在获取当月汇率数据（首次拉取可能需要数秒）…');
-        try {
-          // 币种 = 默认全部 + 当月新建标准产生的自定义币种
-          const currs = new Set(state.meta.currencies);
-          (locationsModule.activeCustomLocations() || []).forEach((c) => currs.add(c.currency));
-          Object.keys(locationsModule.activeCustomCurrencies() || {}).forEach((c) => currs.add(c));
-          const query = Array.from(currs).sort().join(',');
-          const refreshQ = force ? '&refresh=true' : '';
-          const data = await apiModule.api(`/api/rates?year=${requestYear}&month=${requestMonth}&currencies=${encodeURIComponent(query)}${refreshQ}`, { timeout: 180000 });
-          if (state.rateRequestId !== requestId || monthlyModule.monthKey() !== requestMonthKey) return;
-          state.ratesData = data;
-          state.ratesMonth = requestMonthKey;
-          state.ratesFromCalc = false;
-          service.renderRateCharts();
-          service.renderRatesStats();
-          if (force) feedbackModule.toast('已重新下载当月汇率并更新本地缓存', 'success');
-        } catch (err) {
-          if (state.rateRequestId !== requestId || monthlyModule.monthKey() !== requestMonthKey) return;
-          state.ratesData = null;
-          feedbackModule.toast(err.message, 'error');
-          networkModule.maybeShowNetworkWarning(err.message); // 汇率拉取失败 → 同步提示网络异常/VPN
-        } finally {
-          if (state.rateRequestId === requestId) feedbackModule.setLoading(false);
+        const source = state.ratesSource || {};
+        const note = sharedModule.$('#rates-source-note');
+        if (note) {
+          note.textContent = source.fallback
+            ? `${source.requested_month} 月首日暂无行情，本次图表与预算使用 ${source.source_month} 月平均汇率。`
+            : '汇率已在本月预算计算时自动获取；图表展示本次计算实际使用的币种与日历日序列。';
+          note.classList.toggle('is-warning', !!source.fallback);
         }
+        service.renderRateCharts();
+        service.renderRatesStats();
+        return true;
+      }
+
+      // 保留公开方法名供组装层调用；它只渲染计算响应，不再发起独立行情请求。
+      function loadRates() {
+        return service.renderRatesPanel();
       }
 
       Object.assign(service, {
         destroyRateCharts,
         resizeRateCharts,
+        displayCurrencies,
         renderRateCharts,
         renderRatesStats,
+        renderRatesPanel,
         loadRates,
       });
 

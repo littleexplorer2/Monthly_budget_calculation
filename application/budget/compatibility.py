@@ -2,10 +2,9 @@
 
 import pandas as pd
 
-from application.contracts import month_bounds
+from application import rates as app_rates
 from application.defaults import resolve_standards
 from core.budget import calculate_travel_budget as _calculate_travel_budget
-from core.rates import get_historical_rates_cached
 from .inputs import required_currencies
 
 
@@ -19,8 +18,7 @@ def legacy_calculate_travel_budget(itinerary, region, year, month,
         resolved_standards = resolve_standards(standards_override)
     if rates_dict is None:
         currencies = required_currencies(itinerary, region, resolved_standards)
-        start, end = month_bounds(year, month)
-        rates_dict = get_historical_rates_cached(currencies, start, end)
+        rates_dict, _ = app_rates.fetch_budget_rates(currencies, year, month)
     return _calculate_travel_budget(
         itinerary, region, year, month,
         standards_override=standards_override,

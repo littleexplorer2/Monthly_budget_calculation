@@ -78,14 +78,14 @@
         feedbackModule.setElVisible(sharedModule.$('#data-modal'), false);
       }
 
-      /** 完整保存当前状态，再将 data/ 提交并推送到已配置的 Git 远程仓库。 */
+      /** 完整保存当前状态，再上传预算/行程与默认标准；汇率缓存不进入提交。 */
       async function uploadAllData() {
-        if (!window.confirm('确定保存当前全部数据，并提交、上传到远程仓库吗？\n\n上传仅包含项目 data/ 目录。')) return;
+        if (!window.confirm('确定保存预算与行程数据，并提交、上传到远程仓库吗？\n\n将上传 app-state.json 与 defaults.json；汇率缓存会在使用时重新拉取，不随本次上传。')) return;
         const button = sharedModule.$('#btn-data-upload');
         const status = sharedModule.$('#data-upload-status');
         if (button) button.disabled = true;
         if (status) status.textContent = '正在保存本地数据…';
-        feedbackModule.setLoading(true, '正在保存并上传全部数据…');
+        feedbackModule.setLoading(true, '正在保存并上传预算与行程数据…');
         try {
           monthlyModule.saveMonthOptions();
           standardsModule.snapshotOverridesIntoState();
@@ -175,7 +175,6 @@
           resultsModule.clearResult();
           calendarModule.renderCalendar();
           itineraryModule.renderItinerary();
-          standardsViewModule.invalidateConfirmation();
         }
         await service.openDataManager();
         if (ratesDeleted) feedbackModule.toast(`已删除 ${m} 的保存数据`, 'success');
@@ -240,7 +239,6 @@
         itineraryModule.renderItinerary();
         annualModule.renderAnnualBudget();
         analysisModule.renderAnalysis();
-        standardsViewModule.invalidateConfirmation();
         service.closeDataManager();
         if (ratesError) {
           feedbackModule.toast(`状态已清空，但汇率缓存删除失败：${ratesError.message}`, 'warn');

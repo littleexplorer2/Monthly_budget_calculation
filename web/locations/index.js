@@ -71,6 +71,32 @@
         return (customs && customs[key]) || key;
       }
 
+      function currencyPriority() {
+        const configured = state.meta && state.meta.currency_priority;
+        return Array.isArray(configured) && configured.length
+          ? configured.map((currency) => String(currency).toUpperCase())
+          : ['CNY', 'HKD', 'USD'];
+      }
+
+      function compareCurrencies(left, right) {
+        const a = String(left).toUpperCase();
+        const b = String(right).toUpperCase();
+        const priority = service.currencyPriority();
+        const aIndex = priority.indexOf(a);
+        const bIndex = priority.indexOf(b);
+        if (aIndex >= 0 || bIndex >= 0) {
+          if (aIndex < 0) return 1;
+          if (bIndex < 0) return -1;
+          if (aIndex !== bIndex) return aIndex - bIndex;
+        }
+        return a.localeCompare(b, 'en');
+      }
+
+      function orderedCurrencies(currencies) {
+        return Array.from(new Set(Array.from(currencies || [], (currency) => String(currency).toUpperCase())))
+          .sort(service.compareCurrencies);
+      }
+
       function regionName(key) {
         const r = (state.meta && state.meta.regions || []).find((x) => x.key === key);
         return r ? r.name : key;
@@ -102,6 +128,9 @@
         locationCategory,
         locationCurrency,
         currencyName,
+        currencyPriority,
+        compareCurrencies,
+        orderedCurrencies,
         regionName,
         hexToRgba,
         locColor,

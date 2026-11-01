@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from application import metadata as app_metadata
+
 
 def required_currencies(itinerary, region, resolved_standards) -> list[str]:
     """从同一标准快照和实际行程推导所需行情币种。"""
@@ -12,4 +14,4 @@ def required_currencies(itinerary, region, resolved_standards) -> list[str]:
             raise ValueError(f"未知地点：{location}（可先在页面「新建预算标准」中添加）")
         currencies.add(registry[location]["currency"])
     currencies.update(currency for currency, amount in extra.items() if amount)
-    return sorted(currencies)
+    return app_metadata.sort_currencies(currencies)

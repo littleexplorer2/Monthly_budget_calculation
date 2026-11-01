@@ -248,6 +248,77 @@ def _fetch_rates_parallel(currencies: list[str], start: str, end: str,
     return rates
 
 
+def _previous_month(year: int, month: int) -> tuple[int, int]:
+    """Return the calendar month immediately before ``year``/``month``."""
+    if month == 1:
+        return year - 1, 12
+    return year, month - 1
+
+
+def _fetch_budget_rates(currencies: list[str], year: int, month: int,
+                        today: dt.date | None = None,
+                        ) -> tuple[dict[str, pd.Series], dict]:
+    """Fetch monthly rates for one budget calculation.
+
+    Yahoo may legitimately have no observation for the new month on its first
+    calendar day.  Only for the actual current month on day 1, a completely
+    unavailable current-month request falls back to the previous calendar
+    month's arithmetic mean.  The mean is expanded to the requested month's
+    calendar axis so the pure budget formulas keep receiving explicit daily
+    inputs and do not acquire any clock, network, or cache dependency.
+    """
+    app_contracts.validate_year_month(year, month)
+    start, end = app_contracts.month_bounds(year, month)
+    requested_month = f"{year:04d}-{month:02d}"
+    try:
+        rates = _fetch_rates_parallel(currencies, start, end)
+        return rates, {
+            "kind": "current_month",
+            "requested_month": requested_month,
+            "fallback": False,
+        }
+    except app_contracts.RateFetchError as current_error:
+        current_day = today or dt.date.today()
+        if ((year, month) != (current_day.year, current_day.month)
+                or current_day.day != 1):
+            raise
+
+        previous_year, previous_month = _previous_month(year, month)
+        previous_start, previous_end = app_contracts.month_bounds(
+            previous_year, previous_month,
+        )
+        source_month = f"{previous_year:04d}-{previous_month:02d}"
+        try:
+            previous_rates = _fetch_rates_parallel(
+                currencies, previous_start, previous_end,
+            )
+            target_index = pd.date_range(start, end)
+            fallback_rates: dict[str, pd.Series] = {}
+            averages: dict[str, float] = {}
+            for currency in currencies:
+                values = rates_core.valid_rate_series(previous_rates, currency)
+                average = float(values.mean())
+                fallback_rates[currency] = pd.Series(
+                    average,
+                    index=target_index,
+                    name=getattr(previous_rates[currency], "name", None) or "rate",
+                    dtype="float64",
+                )
+                averages[currency] = average
+        except (app_contracts.RateFetchError, ValueError) as previous_error:
+            raise app_contracts.RateFetchError(
+                f"{current_error}；{source_month} 月平均汇率回退失败：{previous_error}"
+            ) from previous_error
+
+        return fallback_rates, {
+            "kind": "previous_month_average",
+            "requested_month": requested_month,
+            "source_month": source_month,
+            "fallback": True,
+            "averages": averages,
+        }
+
+
 
 def _series_stats(series: pd.Series) -> dict:
     """汇率序列统计（起始/期末/均值/最低/最高），空序列各字段为 None。"""

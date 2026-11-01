@@ -19,7 +19,7 @@ def run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 class RepositoryUploadTests(unittest.TestCase):
-    def test_upload_commits_only_project_data_and_pushes_it(self):
+    def test_upload_commits_budget_state_and_defaults_but_not_rate_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             temp_dir = Path(temp)
             root = temp_dir / "repo"
@@ -35,14 +35,22 @@ class RepositoryUploadTests(unittest.TestCase):
             run_git(temp_dir, "init", "--bare", str(remote))
 
             state_file = data_dir / "app-state.json"
+            defaults_file = data_dir / "defaults.json"
+            rates_dir = data_dir / "rates"
+            rates_dir.mkdir()
+            rate_file = rates_dir / "2026-10.json"
             other_file = root / "other.txt"
             state_file.write_text(json.dumps({"version": 1}), encoding="utf-8")
+            defaults_file.write_text(json.dumps({"fixed": {"Mainland": {"CNY": 1}}}), encoding="utf-8")
+            rate_file.write_text(json.dumps({"USD": {"2026-10-01": 7.0}}), encoding="utf-8")
             other_file.write_text("original", encoding="utf-8")
             run_git(root, "add", "--", "每月预算/data", "other.txt")
             run_git(root, "commit", "-m", "initial")
             run_git(root, "remote", "add", "origin", str(remote))
 
             state_file.write_text(json.dumps({"version": 2}), encoding="utf-8")
+            defaults_file.write_text(json.dumps({"fixed": {"Mainland": {"CNY": 2}}}), encoding="utf-8")
+            rate_file.write_text(json.dumps({"USD": {"2026-10-01": 7.2}}), encoding="utf-8")
             other_file.write_text("keep staged", encoding="utf-8")
             run_git(root, "add", "--", "other.txt")
 
@@ -56,6 +64,12 @@ class RepositoryUploadTests(unittest.TestCase):
             self.assertEqual(run_git(root, "diff", "--cached", "--name-only").stdout.strip(), "other.txt")
             remote_state = run_git(root, "--git-dir", str(remote), "show", "main:每月预算/data/app-state.json")
             self.assertEqual(json.loads(remote_state.stdout), {"version": 2})
+            remote_defaults = run_git(root, "--git-dir", str(remote), "show", "main:每月预算/data/defaults.json")
+            self.assertEqual(json.loads(remote_defaults.stdout), {"fixed": {"Mainland": {"CNY": 2}}})
+            remote_rates = run_git(root, "--git-dir", str(remote), "show", "main:每月预算/data/rates/2026-10.json")
+            self.assertEqual(json.loads(remote_rates.stdout), {"USD": {"2026-10-01": 7.0}})
+            status = run_git(root, "-c", "core.quotePath=false", "status", "--short").stdout
+            self.assertIn("每月预算/data/rates/2026-10.json", status)
 
 
 if __name__ == "__main__":

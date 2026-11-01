@@ -4,6 +4,8 @@ from .service import (
     LOCATION_NAMES,
     REGION_NAMES,
     CURRENCY_NAMES,
+    CURRENCY_PRIORITY,
+    _sort_currencies as sort_currencies,
     _all_currencies as all_currencies,
     _location_names as location_names,
     _currency_names as currency_names,

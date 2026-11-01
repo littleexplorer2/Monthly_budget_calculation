@@ -7,6 +7,7 @@ import math
 import re
 from application import contracts as app_contracts
 from application import defaults as app_defaults
+from application import metadata as app_metadata
 from application import rates as app_rates
 from core import budget as budget_core
 from core import rates as rates_core
@@ -105,7 +106,7 @@ def api_annual_budget(req: app_contracts.AnnualBudgetRequest):
             raise ValueError(f"全年预算 {currency} 金额必须是非负有限数")
         amounts[currency] = float(raw_amount)
 
-    curr_list = sorted(amounts)
+    curr_list = app_metadata.sort_currencies(amounts)
     rates, errors = app_rates.fetch_annual_close_rates(curr_list, start, end)
     blocking = [currency for currency, amount in amounts.items() if amount > 0 and currency in errors]
     if blocking:
@@ -149,10 +150,18 @@ def api_calculate(req: app_contracts.CalculateRequest):
     if not expanded:
         raise ValueError("行程为空（或旅居全部被排除），请至少保留一个日期区间")
 
-    start, end = app_contracts.month_bounds(req.year, req.month)
-    curr_list = required_currencies(expanded, req.region, resolved_standards)
+    budget_curr_list = required_currencies(expanded, req.region, resolved_standards)
+    # CNH/CNY 只供统计面板展示；预算公式仍只消费实际预算币种。
+    rate_curr_list = app_metadata.sort_currencies([*budget_curr_list, "CNH"])
 
-    rates = app_rates.fetch_rates_parallel(curr_list, start, end)
+    rates, rate_source = app_rates.fetch_budget_rates(
+        rate_curr_list, req.year, req.month,
+    )
+    if rate_source.get("fallback"):
+        warnings.append(
+            f"{rate_source['requested_month']} 月首日暂无可用行情，"
+            f"已使用 {rate_source['source_month']} 月平均汇率计算"
+        )
 
     result = budget_core.calculate_travel_budget(
         expanded, req.region, req.year, req.month,
@@ -162,5 +171,6 @@ def api_calculate(req: app_contracts.CalculateRequest):
     )
     result["warnings"] = warnings
     result["deduped_entries"] = dup_count
-    result["rates"] = app_rates.rates_payload(rates, curr_list)
+    result["rates"] = app_rates.rates_payload(rates, rate_curr_list)
+    result["rate_source"] = rate_source
     return result

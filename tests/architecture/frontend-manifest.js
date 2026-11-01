@@ -21,6 +21,7 @@ module.exports = Object.freeze({
   monthly: 'monthly',
   annual: 'annual',
   analysis: 'analysis',
+  navigation: 'navigation',
   data: 'data',
   travel: 'travel',
   shell: 'shell',
