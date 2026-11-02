@@ -105,6 +105,8 @@ def _meta_payload() -> dict:
             "travel": defaults["travel"],
             "extra": defaults["extra"],
         },
+        "default_subscriptions": defaults["subscriptions"],
+        "default_subscriptions_configured": defaults["subscriptions_configured"],
         "locations": locations,
         "regions": regions,
         "currencies": _all_currencies(defaults),

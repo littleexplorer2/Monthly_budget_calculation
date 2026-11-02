@@ -363,7 +363,8 @@ test('普通状态持久化把旧差异覆盖升级为当前月份完整标准�
   const saved = stateBody.overridesByMonth['2026-09'];
   assert.equal(saved._snapshot, true);
   assert.equal(saved.variable.Shenzhen.CNY, 95);
-  assert.equal(saved.fixed.Mainland.CNY, 64, '完整快照不能只保留相对默认值的差异');
+  assert.equal(Object.hasOwn(saved, 'fixed'), false, '订阅固定预算不得写回月份标准覆盖');
+  assert.equal(Object.hasOwn(saved, 'extra'), false, '旧额外预算不得写回月份标准覆盖');
 
   const reloaded = loadAppForTest();
   reloaded.seed();
@@ -448,7 +449,7 @@ test('渲染两个区域都不抛异常（含旅居开关）', () => {
 
 /* ---------- 默认标准弹窗的显示范围（显示所有默认预算） ---------- */
 
-test('未勾选「显示所有默认预算」时只看本月对应的部分（当前区域 + 本月行程里的旅居地点）', () => {
+test('未勾选「显示全部旅居预算」时只列本月行程里的旅居地点', () => {
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
@@ -456,18 +457,16 @@ test('未勾选「显示所有默认预算」时只看本月对应的部分（�
   app.state.region = 'Overseas';
 
   const scope = app.defaultsScope();
-  assert.deepEqual(Array.from(scope.regions), ['Overseas'], '只显示本月居住区域的固定预算');
   assert.deepEqual(Array.from(scope.travelLocs), ['Shanghai'], '只显示本月行程里的旅居地点');
 });
 
-test('勾选「显示所有默认预算」时内地/境外与全部旅居地点都出现', () => {
+test('勾选「显示全部旅居预算」时列出所有旅居地点', () => {
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
   app.state.defaultsShowAll = true;
 
   const scope = app.defaultsScope();
-  assert.deepEqual(Array.from(scope.regions), ['Mainland', 'Overseas']);
   assert.deepEqual(Array.from(scope.travelLocs), ['Shanghai', 'Taipei'], '未出现在本月行程里的旅居地点也要显示');
 });
 
@@ -487,8 +486,8 @@ test('默认标准弹窗的旅居预算不再依赖「包含旅居」开关，�
   app.state.region = 'Overseas';
   app.state.defaultsShowAll = true;
   app.renderDefaultsPanel();
-  assert.match(host.innerHTML, /境外/, '勾选后境外固定预算一并显示');
-  assert.match(host.innerHTML, /内地/);
+  assert.doesNotMatch(host.innerHTML, /data-table="fixed"/, '默认弹窗不再提供手工固定预算入口');
+  assert.doesNotMatch(host.innerHTML, /兼容额外预算/);
   assert.match(host.innerHTML, /Taipei/, '勾选后显示全部旅居地点');
 });
 
@@ -527,25 +526,13 @@ test('当月预算面板仍按「包含旅居」与勾选过滤，不受默认�
   assert.doesNotMatch(host.innerHTML, /Shanghai/, '当月面板只显示本次勾选的旅居地点');
 });
 
-test('默认标准弹窗的「＋ 新建币种」按分组写入目标区域', () => {
+test('手工固定预算新建入口已停用，统一引导到订阅管理', () => {
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
 
-  app.openAddStandard('fixed', 'Overseas');
-  app.el('#af-currency').value = 'EUR';
-  app.el('#af-name').value = '欧元';
-  app.el('#af-daily').value = '12';
-  app.confirmAddStandard();
-  assert.equal(app.state.defaultsDraft.standards.fixed.Overseas.EUR, 12);
-  assert.equal(app.state.defaultsDraft.standards.fixed.Mainland.EUR, undefined);
-
-  // 同一币种可以再加进内地（重复判断只看目标区域）
-  app.openAddStandard('fixed', 'Mainland');
-  app.el('#af-currency').value = 'EUR';
-  app.el('#af-daily').value = '20';
-  app.confirmAddStandard();
-  assert.equal(app.state.defaultsDraft.standards.fixed.Mainland.EUR, 20);
-  assert.equal(app.state.standards.fixed.Mainland.EUR, undefined, '新建默认币种不得改动当月标准');
-  assert.equal(app.defaultsDraftDirty(), true);
+  const before = JSON.stringify(app.state.defaultsDraft.standards.fixed);
+  assert.equal(app.openAddStandard('fixed', 'Overseas'), false);
+  assert.equal(JSON.stringify(app.state.defaultsDraft.standards.fixed), before);
+  assert.equal(app.defaultsDraftDirty(), false);
 });

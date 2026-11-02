@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.standardsEditor = Object.freeze({
-    dependencies: Object.freeze(["http","calendar","feedback","locations","persistence","shared","standards","standardsView","state","travel"]),
-    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, locations: locationsModule, persistence: persistenceModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["http","calendar","feedback","locations","persistence","shared","standards","standardsView","state","subscriptions","travel"]),
+    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, locations: locationsModule, persistence: persistenceModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       const runtime = {
@@ -64,6 +64,7 @@
         state.defaultsDraft = {
           standards: draft, locations: draftLocs,
           locationNames: draftLocNames, currencyNames: draftCurrNames,
+          subscriptions: subscriptionsModule.defaultDraftItems(),
         };
       }
 
@@ -84,7 +85,16 @@
       /** 默认预算标准是否有未保存的改动（收起编辑区时一律视为没有） */
       function defaultsDraftDirty() {
         if (!state.editingDefaults || !state.defaultsDraft) return false;
-        return service.countStandardsDiffs(state.defaultsDraft.standards, state.meta.default_standards) > 0;
+        return service.countDefaultsDiffs() > 0;
+      }
+
+      function countDefaultsDiffs() {
+        if (!state.defaultsDraft) return 0;
+        return service.countStandardsDiffs(state.defaultsDraft.standards, state.meta.default_standards)
+          + subscriptionsModule.defaultDiffCount(
+            state.defaultsDraft.subscriptions,
+            (state.meta && state.meta.default_subscriptions) || [],
+          );
       }
 
       /** 比较两套标准（variable/fixed/travel/extra）的差异处数 */
@@ -124,6 +134,10 @@
           }
         }
         return diffs;
+      }
+
+      function defaultSubscriptionsHtml() {
+        return subscriptionsModule.defaultsSectionHtml();
       }
 
       /** 生成「与默认值不同」标记；dir 决定行内动作指向哪一侧。
@@ -299,7 +313,7 @@
         const saveBtn = sharedModule.$('#btn-save-defaults');
         if (saveBtn) {
           saveBtn.disabled = !open || runtime.defaultsSaveInFlight;
-          saveBtn.title = '把默认预算标准写入服务器 data/defaults.json（不影响当月与已保存月份）';
+          saveBtn.title = '把默认预算与订阅配置写入服务器 data/defaults.json（不影响当前与历史月份）';
         }
         service.updateDefaultsHint();
       }
@@ -310,9 +324,7 @@
         if (!hint) return;
         const open = !!state.editingDefaults;
         if (open) {
-          const diffs = service.defaultsDraftDirty()
-            ? service.countStandardsDiffs(state.defaultsDraft.standards, state.meta.default_standards)
-            : 0;
+          const diffs = service.defaultsDraftDirty() ? service.countDefaultsDiffs() : 0;
           if (diffs > 0) {
             hint.textContent = `默认标准已修改 ${diffs} 处（尚未保存）`;
             hint.classList.add('dirty');
@@ -333,6 +345,10 @@
       // 固定预算币种的目标区域（默认标准弹窗里按分组按钮决定）
 
       function openAddStandard(category, region) {
+        if (category === 'fixed') {
+          feedbackModule.toast('固定预算由订阅项目月均汇总生成，请在订阅管理中新增项目', 'info');
+          return false;
+        }
         runtime.addStdCategory = category;
         runtime.addStdToDefaults = !!state.editingDefaults && !!state.defaultsDraft;
         runtime.addStdRegion = (region === 'Overseas' || region === 'Mainland') ? region : state.region;
@@ -340,7 +356,7 @@
         const title = sharedModule.$('#add-std-title');
         const note = sharedModule.$('#add-std-note');
         const scopeNote = runtime.addStdToDefaults
-          ? '（将加入服务器默认标准，点「保存默认标准」后生效，不影响当月）'
+          ? '（将加入服务器默认配置，点「保存默认配置」后生效，不影响当月）'
           : '（仅当月生效）';
         if (category === 'variable') {
           title.textContent = runtime.addStdToDefaults ? '新建默认标准 · 定居地点' : '新建定居地点（可变预算）';
@@ -371,6 +387,7 @@
         feedbackModule.setElVisible(sharedModule.$('#add-std-modal'), true);
         const first = form.querySelector('input');
         if (first) first.focus();
+        return true;
       }
 
       function closeAddStandard() {
@@ -472,7 +489,7 @@
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
         service.closeAddStandard();
-        feedbackModule.toast('已加入默认标准（尚未保存，点「保存默认标准」生效）', 'success');
+        feedbackModule.toast('已加入默认配置（尚未保存，点「保存默认配置」生效）', 'success');
       }
 
       /** 从默认标准草稿中删除新建的地点/币种 */
@@ -559,7 +576,7 @@
       async function saveDefaultStandardsToServer() {
         if (runtime.defaultsSaveInFlight) return;
         if (!state.editingDefaults || !state.defaultsDraft) {
-          feedbackModule.toast('请先用上下文栏「⚙ 默认预算标准」按钮打开默认标准弹窗', 'warn');
+          feedbackModule.toast('请先用上下文栏「⚙ 默认预算标准」按钮打开默认配置弹窗', 'warn');
           return;
         }
         const draft = state.defaultsDraft.standards;
@@ -567,10 +584,10 @@
           feedbackModule.toast('默认标准至少需要一个定居地点', 'warn');
           return;
         }
-        const diffs = service.countStandardsDiffs(draft, state.meta.default_standards);
+        const diffs = service.countDefaultsDiffs();
         if (!diffs) { feedbackModule.toast('默认标准没有改动', 'info'); return; }
-        if (!confirm(`将把默认预算标准写入服务器 data/defaults.json（共 ${diffs} 处改动）。`
-          + '之后的新月份会使用这套标准；已保存的其它月份会固化为完整快照，'
+        if (!confirm(`将把默认预算与订阅配置写入服务器 data/defaults.json（共 ${diffs} 处改动）。`
+          + '之后的新月份会使用这套预算与订阅默认值；已保存的其它月份会固化为完整快照，'
           + '当前月份的预算不会被改动。是否继续？')) return;
         const defaultsPayload = sharedModule.deepClone({
           base_revision: state.meta.defaults_revision,
@@ -578,12 +595,13 @@
           fixed: draft.fixed,
           travel: draft.travel,
           extra: draft.extra,
+          subscriptions: sharedModule.deepClone(state.defaultsDraft.subscriptions || []),
           location_names: service.snapshotDraftLocationNames(),
           currency_names: service.snapshotDraftCurrencyNames(),
         });
         runtime.defaultsSaveInFlight = true;
         service.syncStandardsModeUI();
-        feedbackModule.setLoading(true, '正在保存默认标准…');
+        feedbackModule.setLoading(true, '正在保存默认配置…');
         try {
           standardsModule.preserveExistingMonthsBeforeDefaultChange();
           const snapshotsSaved = await persistenceModule.persist('now');
@@ -596,7 +614,7 @@
             body: defaultsPayload,
           });
           service.refreshDefaultsAfterServerChange(meta);
-          feedbackModule.toast('已保存默认预算标准（当月预算保持不变）', 'success');
+          feedbackModule.toast('已保存默认预算与订阅配置（当月预算保持不变）', 'success');
         } catch (err) {
           feedbackModule.toast(err.message, 'error');
         } finally {
@@ -650,6 +668,7 @@
       /** 当月数值改回当前生效的默认标准（显式操作，只影响本月） */
       function resetMonthToDefaults() {
         standardsModule.resetStandardsToDefault();
+        subscriptionsModule.syncCurrentMonth();
         state.customLocations = [];
         state.customCurrencies = {};
         standardsModule.saveOverrides();        // 无修改项时先移除统一状态里的覆盖 key
@@ -665,7 +684,9 @@
         beginDefaultsDraft,
         reconstructDefaultsDraft,
         defaultsDraftDirty,
+        countDefaultsDiffs,
         countStandardsDiffs,
+        defaultSubscriptionsHtml,
         diffChipHtml,
         monthDiffChip,
         defaultsDiffChip,

@@ -151,6 +151,8 @@ def api_calculate(req: app_contracts.CalculateRequest):
         raise ValueError("行程为空（或旅居全部被排除），请至少保留一个日期区间")
 
     budget_curr_list = required_currencies(expanded, req.region, resolved_standards)
+    if "CNH" in budget_curr_list:
+        raise ValueError("CNH 仅用于汇率展示，预算标准请使用 CNY")
     # CNH/CNY 只供统计面板展示；预算公式仍只消费实际预算币种。
     rate_curr_list = app_metadata.sort_currencies([*budget_curr_list, "CNH"])
 
@@ -163,10 +165,11 @@ def api_calculate(req: app_contracts.CalculateRequest):
             f"已使用 {rate_source['source_month']} 月平均汇率计算"
         )
 
+    budget_rates = {currency: rates[currency] for currency in budget_curr_list}
     result = budget_core.calculate_travel_budget(
         expanded, req.region, req.year, req.month,
         standards_override=req.standards_override,
-        rates_dict=rates,
+        rates_dict=budget_rates,
         resolved_standards=resolved_standards,
     )
     result["warnings"] = warnings

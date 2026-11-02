@@ -68,6 +68,13 @@ def _annual_bounds(year: int) -> tuple[str, str]:
     return dt.date(year, 1, 1).isoformat(), end.isoformat()
 
 
+def _trailing_year_bounds(today: dt.date | None = None) -> tuple[str, str]:
+    """最近 365 个自然日（含截至日）的首尾日期。"""
+    end = today or dt.date.today()
+    start = end - dt.timedelta(days=364)
+    return start.isoformat(), end.isoformat()
+
+
 
 class RangeIn(BaseModel):
     start: str = Field(description="开始日期，YYYY-MM-DD")
@@ -104,6 +111,7 @@ class DefaultsPayload(BaseModel):
     fixed: dict
     extra: dict = Field(default_factory=dict)
     travel: dict = Field(default_factory=dict)
+    subscriptions: list[dict] = Field(default_factory=list)
     location_names: dict[str, str] = Field(default_factory=dict)
     currency_names: dict[str, str] = Field(default_factory=dict)
 
@@ -123,8 +131,10 @@ class AppStateIn(BaseModel):
     optionsByMonth: dict = Field(default_factory=dict)
     overridesByMonth: dict = Field(default_factory=dict)
     resultsByMonth: dict = Field(default_factory=dict)
+    subscriptionsByMonth: dict = Field(default_factory=dict)
     annualBudgetsByYear: dict = Field(default_factory=dict)
     annualResultsByYear: dict = Field(default_factory=dict)
+    assetPortfoliosById: dict = Field(default_factory=dict)
     baseValues: dict | None = Field(
         default=None,
         description="本次实际修改键的读取基线，用于阻止旧标签页覆盖并发更新",

@@ -96,7 +96,10 @@ class ApplicationIntegrationTests(unittest.TestCase):
 
         def restore_defaults():
             with defaults_service._DEFAULTS_LOCK:
-                defaults_service._apply_defaults_dict(before)
+                defaults_service._apply_defaults_dict(
+                    before,
+                    subscriptions_configured=before["subscriptions_configured"],
+                )
                 defaults_service._DEFAULTS_LOADED_FROM_FILE = before["customized"]
                 defaults_service._DEFAULTS_LOAD_ERROR = before["load_error"]
 
@@ -158,9 +161,13 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertEqual(result["summary"]["总预算(人民币)"], round(440.0 + 15 * monthly_average, 2))
         self.assertEqual(result["extra_details"][0]["rmb_cost"], round(5 * monthly_average, 2))
         self.assertEqual(result["rates"]["series"]["USD"], [4.0] * 5 + [9.0] * 26)
+        self.assertEqual(result["rates"]["series"]["CNY"], [1.0] * 31)
         self.assertIn("CNH", result["rates"]["series"])
         self.assertEqual(len(result["rates"]["series"]["CNH"]), 31)
         self.assertTrue(all(value > 0 for value in result["rates"]["series"]["CNH"]))
+        self.assertNotIn("CNH", result["rates_dict"], "CNH 只能进入展示响应，不能传给预算公式")
+        cny_fixed = next(row for row in result["fixed_details"] if row["currency"] == "CNY")
+        self.assertEqual(cny_fixed["avg_rate"], 1.0)
         self.assertEqual(result["rate_source"], {
             "kind": "current_month",
             "requested_month": "2025-01",
@@ -216,6 +223,35 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertEqual(result["errors"], {})
         self.assertFalse(self.rates_dir.exists())
         self.download.assert_called_once()
+
+    def test_asset_rates_route_uses_trailing_close_window(self):
+        rates = {
+            "HKD": pd.Series([0.90, 0.94], index=pd.to_datetime(["2025-09-29", "2026-09-25"])),
+            "USD": pd.Series([7.0, 7.2], index=pd.to_datetime(["2025-09-29", "2026-09-25"])),
+        }
+        with mock.patch.object(
+            rates_service.app_contracts,
+            "trailing_year_bounds",
+            return_value=("2025-09-29", "2026-09-28"),
+        ), mock.patch.object(
+            rates_service,
+            "_fetch_annual_close_rates",
+            return_value=(rates, {}),
+        ) as fetch:
+            payload = self.request("GET", "/api/asset-rates?currencies=HKD,USD")
+
+        self.assertEqual(payload["kind"], "trailing_365_day_close_average")
+        self.assertEqual(payload["window_days"], 365)
+        self.assertEqual(payload["start_date"], "2025-09-29")
+        self.assertEqual(payload["requested_through"], "2026-09-28")
+        self.assertEqual(payload["observed_through"], "2026-09-25")
+        self.assertEqual(payload["price_field"], "Close")
+        self.assertEqual(payload["non_trading_days"], "excluded")
+        self.assertAlmostEqual(payload["stats"]["HKD"]["average"], 0.92)
+        self.assertEqual(payload["stats"]["USD"]["observation_count"], 2)
+        fetch.assert_called_once_with(
+            ["HKD", "USD"], "2025-09-29", "2026-09-28", refresh=False,
+        )
 
     def test_defaults_save_meta_conflict_and_reset_share_one_service(self):
         initial = self.request("GET", "/api/meta")

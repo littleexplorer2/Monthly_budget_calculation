@@ -24,6 +24,7 @@ function savedResult() {
     savedAt: '2026/9/20 10:00:00',
     region: 'Overseas',
     includeTravel: true,
+    budgetModel: 'subscription-fixed-monthly-equivalent-v2',
     stale: false,
   };
 }

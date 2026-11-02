@@ -6,7 +6,9 @@ from fastapi.responses import JSONResponse
 import os
 import threading
 import time
+from application import backups as app_backups
 from application import contracts as app_contracts
+from application import defaults as app_defaults
 from application import repository as app_repository
 from application import state as app_state
 import logging
@@ -61,20 +63,38 @@ def _arm_shutdown_timer() -> None:
     delay = max(_SHUTDOWN_FLUSH_SECONDS, float(SHUTDOWN_GRACE_SECONDS or 0.0))
 
     def _do_shutdown() -> None:
-        logger.info("所有浏览器页面均已关闭，立即停止服务并释放端口。")
-        # 等正在写入的 app-state.json 完成，避免 Windows 上 replace 被中途杀掉
-        acquired = app_state.state_disk_lock.acquire(timeout=2.0)
-        if acquired:
-            app_state.state_disk_lock.release()
-        # 用户可能在上传完成前关闭页面；不要在 Git commit/push 中途杀掉进程。
-        upload_acquired = app_repository.repository_upload_lock.acquire(timeout=app_repository.GIT_PUSH_TIMEOUT + 5)
-        if upload_acquired:
-            app_repository.repository_upload_lock.release()
-        os._exit(0)
+        _finish_shutdown()
 
     _shutdown_timer = threading.Timer(delay, _do_shutdown)
     _shutdown_timer.daemon = True
     _shutdown_timer.start()
+
+
+def _finish_shutdown() -> bool:
+    """等待最终写入、生成退出备份，再结束进程；备份失败时保留服务。"""
+    logger.info("所有浏览器页面均已关闭，正在完成保存与退出备份。")
+    # 等正在写入的 app-state.json 完成，避免 Windows 上 replace 被中途杀掉。
+    acquired = app_state.state_disk_lock.acquire(timeout=2.0)
+    if acquired:
+        app_state.state_disk_lock.release()
+    # 用户可能在上传完成前关闭页面；不要在 Git commit/push 中途复制或杀掉进程。
+    upload_acquired = app_repository.repository_upload_lock.acquire(
+        timeout=app_repository.GIT_PUSH_TIMEOUT + 5,
+    )
+    if upload_acquired:
+        app_repository.repository_upload_lock.release()
+    try:
+        backup_path = app_backups.create_data_backup(
+            reason="last-browser-tab-closed",
+            state_lock=app_state.state_disk_lock,
+            defaults_lock=app_defaults.defaults_disk_lock,
+        )
+    except Exception:
+        logger.exception("退出备份失败；为避免无备份退出，服务将继续运行")
+        return False
+    logger.info("退出备份已创建：%s", backup_path)
+    os._exit(0)
+    return True
 
 
 

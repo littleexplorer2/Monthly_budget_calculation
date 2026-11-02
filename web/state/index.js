@@ -20,8 +20,10 @@
         optionsByMonth: {},       // { 'YYYY-MM': { region, includeTravel, travelSelected } }
         overridesByMonth: {},     // { 'YYYY-MM': 完整标准快照；兼容读取旧版差异 }
         resultsByMonth: {},       // { 'YYYY-MM': 计算结果（不含汇率明细） }
+        subscriptionsByMonth: {}, // { 'YYYY-MM': {items: 订阅项目逐月快照} }
         annualBudgetsByYear: {},  // { 'YYYY': { currency: 全年当地金额 } }
         annualResultsByYear: {},  // { 'YYYY': 紧凑全年计算结果（不含原始汇率序列） }
+        assetPortfoliosById: {},  // { current: {calculationBase:{CNY,HKD,USD}, rates, items} }
         annualYear: 0,
         annualRatesData: null,
         annualRatesYear: null,
@@ -51,7 +53,7 @@
         // 默认标准编辑：editingDefaults=true 时输入框直接编辑服务器默认标准（defaultsDraft 为未保存草稿）
         editingDefaults: false,
         defaultsDraft: null,
-        // 默认标准弹窗的显示范围：false=只显示本月对应的部分，true=显示所有默认预算。
+        // 默认标准弹窗的显示范围：false=只显示本月旅居地点，true=显示全部旅居预算。
         // 纯界面偏好，只存在于内存（不写 app-state.json / localStorage，也不进草稿）。
         defaultsShowAll: false,
       };

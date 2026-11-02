@@ -9,6 +9,7 @@ import re
 import threading
 from application import config as app_config
 from application import contracts as app_contracts
+from application import defaults as app_defaults
 from core import storage
 
 
@@ -16,7 +17,7 @@ APP_STATE_FILE = app_config.BASE_DIR / "data" / "app-state.json"
 
 
 
-_state_disk_lock = threading.Lock()
+_state_disk_lock = threading.RLock()
 
 
 
@@ -34,8 +35,10 @@ def _empty_app_state() -> dict:
         "optionsByMonth": {},
         "overridesByMonth": {},
         "resultsByMonth": {},
+        "subscriptionsByMonth": {},
         "annualBudgetsByYear": {},
         "annualResultsByYear": {},
+        "assetPortfoliosById": {},
     }
 
 
@@ -233,6 +236,238 @@ def _compact_annual_results(raw: dict | None) -> dict:
     return out
 
 
+_MANAGED_CURRENCIES = {"CNY", "HKD", "USD"}
+_STATE_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+_LEGACY_FIXED_OVERRIDE_FIELDS = frozenset({"fixed", "extra"})
+
+
+def _month_state_key(raw_month, field: str) -> str:
+    month = str(raw_month)
+    match = re.fullmatch(r"(\d{4})-(\d{2})", month)
+    if not match or not (2000 <= int(match.group(1)) <= 2100) or not (1 <= int(match.group(2)) <= 12):
+        raise ValueError(f"{field} 月份无效：{raw_month!r}")
+    return month
+
+
+def _state_amount(value, path: str, *, positive: bool = False) -> float:
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or (float(value) <= 0 if positive else float(value) < 0)):
+        qualifier = "正有限数字" if positive else "非负有限数字"
+        raise ValueError(f"{path} 必须是{qualifier}")
+    return float(value)
+
+
+def _state_text(value, path: str, *, max_length: int = 120) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > max_length:
+        raise ValueError(f"{path} 必须是 1-{max_length} 个字符的非空字符串")
+    return value.strip()
+
+
+def _state_item_id(value, path: str) -> str:
+    if not isinstance(value, str) or not _STATE_ID_PATTERN.fullmatch(value):
+        raise ValueError(f"{path} 必须是 1-64 位字母、数字或 . _ : -")
+    return value
+
+
+def _normalize_subscriptions(raw: dict | None) -> dict:
+    """校验逐月订阅快照；空对象保留为本次删除使用的墓碑。"""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("subscriptionsByMonth 必须是对象")
+    out = {}
+    for raw_month, raw_snapshot in raw.items():
+        month = _month_state_key(raw_month, "subscriptionsByMonth")
+        path = f"subscriptionsByMonth.{month}"
+        if raw_snapshot == {}:
+            out[month] = {}
+            continue
+        if not isinstance(raw_snapshot, dict):
+            raise ValueError(f"{path} 必须是对象")
+        unknown = set(raw_snapshot) - {"items"}
+        if unknown:
+            raise ValueError(f"{path} 包含未知字段：{', '.join(sorted(unknown))}")
+        raw_items = raw_snapshot.get("items")
+        if not isinstance(raw_items, list):
+            raise ValueError(f"{path}.items 必须是数组")
+        if len(raw_items) > 500:
+            raise ValueError(f"{path}.items 最多保存 500 项")
+        items = []
+        seen_ids = set()
+        for index, raw_item in enumerate(raw_items):
+            item_path = f"{path}.items[{index}]"
+            if not isinstance(raw_item, dict):
+                raise ValueError(f"{item_path} 必须是对象")
+            unknown = set(raw_item) - {
+                "id", "name", "currency", "cycle", "amount",
+                "included", "includeByDefault",
+            }
+            if unknown:
+                raise ValueError(f"{item_path} 包含未知字段：{', '.join(sorted(unknown))}")
+            item_id = _state_item_id(raw_item.get("id"), f"{item_path}.id")
+            if item_id in seen_ids:
+                raise ValueError(f"{item_path}.id 重复：{item_id}")
+            seen_ids.add(item_id)
+            currency = raw_item.get("currency")
+            if currency not in _MANAGED_CURRENCIES:
+                raise ValueError(f"{item_path}.currency 仅支持 CNY / HKD / USD")
+            cycle = raw_item.get("cycle")
+            if cycle not in ("monthly", "yearly"):
+                raise ValueError(f"{item_path}.cycle 必须是 monthly 或 yearly")
+            included = raw_item.get("included")
+            include_by_default = raw_item.get("includeByDefault")
+            if not isinstance(included, bool):
+                raise ValueError(f"{item_path}.included 必须是布尔值")
+            if not isinstance(include_by_default, bool):
+                raise ValueError(f"{item_path}.includeByDefault 必须是布尔值")
+            items.append({
+                "id": item_id,
+                "name": _state_text(raw_item.get("name"), f"{item_path}.name"),
+                "currency": currency,
+                "cycle": cycle,
+                "amount": _state_amount(raw_item.get("amount"), f"{item_path}.amount"),
+                "included": included,
+                "includeByDefault": include_by_default,
+            })
+        out[month] = {"items": items}
+    return out
+
+
+def _normalize_asset_calculation_base(raw, path: str) -> dict:
+    """把旧版纯 CNY 数值单向规范为 CNY/HKD/USD 基数组合。"""
+    if isinstance(raw, dict):
+        unknown = set(raw) - _MANAGED_CURRENCIES
+        if unknown:
+            raise ValueError(f"{path} 包含未知币种：{', '.join(sorted(unknown))}")
+        base = {
+            currency: _state_amount(raw.get(currency, 0), f"{path}.{currency}")
+            for currency in ("CNY", "HKD", "USD")
+        }
+        if not any(value > 0 for value in base.values()):
+            raise ValueError(f"{path} 至少一种币种必须大于 0")
+        return base
+    legacy_cny = _state_amount(raw, path, positive=True)
+    return {"CNY": legacy_cny, "HKD": 0.0, "USD": 0.0}
+
+
+def _normalize_asset_portfolios(raw: dict | None) -> dict:
+    """校验当前资产组合；计算基数支持三币种，旧数值按纯 CNY 兼容。"""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("assetPortfoliosById 必须是对象")
+    out = {}
+    for raw_portfolio_id, raw_portfolio in raw.items():
+        portfolio_id = str(raw_portfolio_id)
+        if portfolio_id != "current":
+            raise ValueError(f"assetPortfoliosById 组合标识无效：{portfolio_id!r}")
+        path = f"assetPortfoliosById.{portfolio_id}"
+        if raw_portfolio == {}:
+            out[portfolio_id] = {}
+            continue
+        if not isinstance(raw_portfolio, dict):
+            raise ValueError(f"{path} 必须是对象")
+        unknown = set(raw_portfolio) - {"calculationBase", "rates", "items"}
+        if unknown:
+            raise ValueError(f"{path} 包含未知字段：{', '.join(sorted(unknown))}")
+        calculation_base = _normalize_asset_calculation_base(
+            raw_portfolio.get("calculationBase"), f"{path}.calculationBase",
+        )
+        raw_rates = raw_portfolio.get("rates")
+        if not isinstance(raw_rates, dict):
+            raise ValueError(f"{path}.rates 必须是对象")
+        unknown_rates = set(raw_rates) - _MANAGED_CURRENCIES
+        if unknown_rates:
+            raise ValueError(f"{path}.rates 包含未知币种：{', '.join(sorted(unknown_rates))}")
+        cny_rate = raw_rates.get("CNY", 1)
+        if (isinstance(cny_rate, bool) or not isinstance(cny_rate, (int, float))
+                or float(cny_rate) != 1.0):
+            raise ValueError(f"{path}.rates.CNY 必须是 1")
+        rates = {"CNY": 1.0}
+        for currency in ("HKD", "USD"):
+            value = raw_rates.get(currency)
+            rates[currency] = None if value is None else _state_amount(
+                value, f"{path}.rates.{currency}", positive=True,
+            )
+        raw_items = raw_portfolio.get("items")
+        if not isinstance(raw_items, list):
+            raise ValueError(f"{path}.items 必须是数组")
+        if len(raw_items) > 500:
+            raise ValueError(f"{path}.items 最多保存 500 项")
+        items = []
+        seen_ids = set()
+        for index, raw_item in enumerate(raw_items):
+            item_path = f"{path}.items[{index}]"
+            if not isinstance(raw_item, dict):
+                raise ValueError(f"{item_path} 必须是对象")
+            unknown = set(raw_item) - {
+                "id", "kind", "location", "name", "purpose", "currency", "amount",
+            }
+            if unknown:
+                raise ValueError(f"{item_path} 包含未知字段：{', '.join(sorted(unknown))}")
+            item_id = _state_item_id(raw_item.get("id"), f"{item_path}.id")
+            if item_id in seen_ids:
+                raise ValueError(f"{item_path}.id 重复：{item_id}")
+            seen_ids.add(item_id)
+            kind = raw_item.get("kind")
+            if kind not in ("cash", "term", "investment"):
+                raise ValueError(f"{item_path}.kind 必须是 cash、term 或 investment")
+            purpose = raw_item.get("purpose")
+            if purpose not in ("spending", "reserve", "other"):
+                raise ValueError(f"{item_path}.purpose 必须是 spending、reserve 或 other")
+            currency = raw_item.get("currency")
+            if currency not in _MANAGED_CURRENCIES:
+                raise ValueError(f"{item_path}.currency 仅支持 CNY / HKD / USD")
+            items.append({
+                "id": item_id,
+                "kind": kind,
+                "location": _state_text(raw_item.get("location"), f"{item_path}.location"),
+                "name": _state_text(raw_item.get("name"), f"{item_path}.name"),
+                "purpose": purpose,
+                "currency": currency,
+                "amount": _state_amount(raw_item.get("amount"), f"{item_path}.amount"),
+            })
+        out[portfolio_id] = {
+            "calculationBase": calculation_base,
+            "rates": rates,
+            "items": items,
+        }
+    return out
+
+
+def _has_legacy_fixed_overrides(raw: dict | None) -> bool:
+    """旧月份里手工固定/额外预算已由订阅月均汇总取代。"""
+    if not isinstance(raw, dict):
+        return False
+    overrides = raw.get("overridesByMonth")
+    if not isinstance(overrides, dict):
+        return False
+    return any(
+        isinstance(snapshot, dict)
+        and bool(_LEGACY_FIXED_OVERRIDE_FIELDS.intersection(snapshot))
+        for snapshot in overrides.values()
+    )
+
+
+def _normalize_overrides(raw: dict | None) -> dict:
+    """兼容读取旧月度快照，但不再让旧固定/额外预算进入运行时。"""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("app-state.overridesByMonth 必须是对象")
+    out = {}
+    for month, snapshot in raw.items():
+        if not isinstance(snapshot, dict):
+            out[str(month)] = snapshot
+            continue
+        clean = dict(snapshot)
+        for field in _LEGACY_FIXED_OVERRIDE_FIELDS:
+            clean.pop(field, None)
+        out[str(month)] = clean
+    return out
+
+
 
 def _normalize_app_state(raw: dict | None) -> dict:
     state = _empty_app_state()
@@ -255,7 +490,8 @@ def _normalize_app_state(raw: dict | None) -> dict:
         state["month"] = month
     for field in (
             "itineraryByMonth", "optionsByMonth", "overridesByMonth",
-            "resultsByMonth", "annualBudgetsByYear", "annualResultsByYear"):
+            "resultsByMonth", "subscriptionsByMonth", "annualBudgetsByYear",
+            "annualResultsByYear", "assetPortfoliosById"):
         if field in raw and raw[field] is not None and not isinstance(raw[field], dict):
             raise ValueError(f"app-state.{field} 必须是对象")
     itin_in = raw.get("itineraryByMonth")
@@ -266,13 +502,15 @@ def _normalize_app_state(raw: dict | None) -> dict:
                 month_itin if isinstance(month_itin, dict) else {}
             )
         state["itineraryByMonth"] = cleaned
-    for field in ("optionsByMonth", "overridesByMonth"):
-        val = raw.get(field)
-        if isinstance(val, dict):
-            state[field] = val
+    val = raw.get("optionsByMonth")
+    if isinstance(val, dict):
+        state["optionsByMonth"] = val
+    state["overridesByMonth"] = _normalize_overrides(raw.get("overridesByMonth"))
     state["resultsByMonth"] = _compact_results_map(raw.get("resultsByMonth") or {})
+    state["subscriptionsByMonth"] = _normalize_subscriptions(raw.get("subscriptionsByMonth"))
     state["annualBudgetsByYear"] = _normalize_annual_budgets(raw.get("annualBudgetsByYear"))
     state["annualResultsByYear"] = _compact_annual_results(raw.get("annualResultsByYear"))
+    state["assetPortfoliosById"] = _normalize_asset_portfolios(raw.get("assetPortfoliosById"))
     return state
 
 
@@ -498,6 +736,10 @@ def _merge_app_state(disk: dict | None, incoming: dict | None, replace: bool = F
         disk_n["resultsByMonth"],
         incoming_n["resultsByMonth"],
     )
+    subscriptions = _merge_present_month_map(
+        disk_n["subscriptionsByMonth"],
+        incoming_n["subscriptionsByMonth"],
+    )
     annual_budgets = _merge_present_month_map(
         disk_n["annualBudgetsByYear"],
         incoming_n["annualBudgetsByYear"],
@@ -505,6 +747,10 @@ def _merge_app_state(disk: dict | None, incoming: dict | None, replace: bool = F
     annual_results = _merge_present_month_map(
         disk_n["annualResultsByYear"],
         incoming_n["annualResultsByYear"],
+    )
+    asset_portfolios = _merge_present_month_map(
+        disk_n["assetPortfoliosById"],
+        incoming_n["assetPortfoliosById"],
     )
     year, month = disk_n["year"], disk_n["month"]
     if incoming_n["year"] and incoming_n["month"]:
@@ -517,8 +763,10 @@ def _merge_app_state(disk: dict | None, incoming: dict | None, replace: bool = F
         "optionsByMonth": options,
         "overridesByMonth": overrides,
         "resultsByMonth": results,
+        "subscriptionsByMonth": subscriptions,
         "annualBudgetsByYear": annual_budgets,
         "annualResultsByYear": annual_results,
+        "assetPortfoliosById": asset_portfolios,
     })
 
 
@@ -545,8 +793,10 @@ _STATE_MAP_FIELDS = (
     "optionsByMonth",
     "overridesByMonth",
     "resultsByMonth",
+    "subscriptionsByMonth",
     "annualBudgetsByYear",
     "annualResultsByYear",
+    "assetPortfoliosById",
 )
 
 
@@ -737,7 +987,12 @@ def _partition_state_patch(disk: dict, base_values: dict, payload: dict) -> tupl
             key = str(raw_key)
             if key not in field_base:
                 raise ValueError(f"baseValues.{field} 缺少写入键：{key}")
-            domain = "annual" if field.startswith("annual") else "month"
+            if field.startswith("annual"):
+                domain = "annual"
+            elif field == "assetPortfoliosById":
+                domain = "asset"
+            else:
+                domain = "month"
             group = groups.setdefault((domain, key), {"payload": {}, "base": {}})
             group["payload"].setdefault(field, {})[key] = value
             group["base"].setdefault(field, {})[key] = field_base[key]
@@ -775,7 +1030,9 @@ def _save_app_state(payload: dict, replace: bool = False,
                     allow_partial_conflicts: bool = False) -> dict:
     tab_id, sequence = _validate_state_write_identity(tab_id, sequence)
     with _state_disk_lock:
-        disk = _normalize_app_state(_read_app_state_file())
+        raw_disk = _read_app_state_file()
+        needs_fixed_budget_migration = _has_legacy_fixed_overrides(raw_disk)
+        disk = _normalize_app_state(raw_disk)
         disk["optionsByMonth"] = _fill_options_from_results(
             disk.get("optionsByMonth") or {}, disk.get("resultsByMonth") or {},
         )
@@ -803,6 +1060,15 @@ def _save_app_state(payload: dict, replace: bool = False,
             key in safe_payload for key in ("year", "month", *_STATE_MAP_FIELDS)
         )
         if meaningful:
+            if needs_fixed_budget_migration:
+                # 迁移会从所有月份移除旧 fixed/extra 字段。必须先留下完整、
+                # 只追加且不参与计算的原始快照；备份失败则本次写入整体失败。
+                from application import backups as app_backups
+                app_backups.create_data_backup(
+                    reason="pre-subscription-fixed-migration",
+                    state_lock=_state_disk_lock,
+                    defaults_lock=app_defaults.defaults_disk_lock,
+                )
             state = _merge_app_state(disk, safe_payload, replace=replace)
             state["updatedAt"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             storage.atomic_write_text(

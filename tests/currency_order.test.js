@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('./helpers/dom-stub');
 
-test('预算标准统一按 CNY、HKD、USD、其余字母序显示', async () => {
+test('订阅固定预算只显示 CNY、HKD、USD，年度预算沿用同一顺序', async () => {
   const { app, doc } = createApp();
   await app.init();
   app.state.standards.fixed.Mainland = {
@@ -14,10 +14,7 @@ test('预算标准统一按 CNY、HKD、USD、其余字母序显示', async () =
 
   const fixed = doc.querySelectorAll('#fixed-standards-table .budget-row-title')
     .map((element) => element.textContent.trim().slice(0, 3));
-  const extra = doc.querySelectorAll('#extra-standards-table .budget-row-title')
-    .map((element) => element.textContent.trim().slice(0, 3));
-
-  assert.deepEqual(fixed, ['CNY', 'HKD', 'USD', 'AUD', 'EUR']);
-  assert.deepEqual(extra, ['CNY', 'HKD', 'USD']);
+  assert.deepEqual(fixed, ['CNY', 'HKD', 'USD']);
+  assert.equal(doc.querySelector('#extra-standards-table'), null);
   assert.deepEqual(app.annualCurrencies(), ['CNY', 'HKD', 'USD']);
 });

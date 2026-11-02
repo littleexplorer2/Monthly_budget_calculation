@@ -16,10 +16,12 @@ from .service import (
     _fetch_annual_close_rates as fetch_annual_close_rates,
     _annual_observed_through as annual_observed_through,
     _annual_rates_payload as annual_rates_payload,
+    _asset_rates_payload as asset_rates_payload,
     NETWORK_CHECK_TIMEOUT,
     api_network_check as network_check,
     api_data_rates_list as data_rates_list,
     api_data_rates_delete as data_rates_delete,
     api_rates as rates,
     api_annual_rates as annual_rates,
+    api_asset_rates as asset_rates,
 )

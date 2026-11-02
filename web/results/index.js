@@ -7,6 +7,7 @@
     dependencies: Object.freeze(["locations","monthly","persistence","shared","state"]),
     create({ locations: locationsModule, monthly: monthlyModule, persistence: persistenceModule, shared: sharedModule, state: stateModule }, service = {}) {
       const { state } = stateModule;
+      const BUDGET_MODEL = 'subscription-fixed-monthly-equivalent-v2';
 
       /** 每月计算结果存储：{ 'YYYY-MM': {summary, daily_details, fixed_details, extra_details, warnings, savedAt} } */
       function loadResultsMap() {
@@ -29,6 +30,7 @@
           region: resultRegion === 'Overseas' ? 'Overseas' : 'Mainland',
           includeTravel: context.includeTravel == null
             ? !!state.includeTravel : !!context.includeTravel,
+          budgetModel: BUDGET_MODEL,
           stale: false,
         });
         map[targetMonth] = saved;
@@ -48,7 +50,12 @@
       }
 
       function loadResultForMonth(key) {
-        return service.loadResultsMap()[key] || null;
+        const result = service.loadResultsMap()[key] || null;
+        if (result && result.budgetModel !== BUDGET_MODEL) {
+          result.stale = true;
+          result.staleReason = '固定预算来源已改为订阅月均汇总';
+        }
+        return result;
       }
 
       /* --------------------------------------------------------------------------
@@ -131,8 +138,7 @@
         const s = r.summary;
         const total = Number(s['总预算(人民币)']);
 
-        // 三张明细表与顶部胶囊共用一套合计：可变 + 固定 + 额外 = 本月总预算
-        // （固定 = 固定预算 + 旅居一次性；额外预算仍计入 summary 的「固定费用合计」，只是展示上分开）
+        // 新预算模型只有可变 + 固定两类；旧结果若带额外预算，只作为过期兼容提示。
         const split = service.splitFixedExtraDetails(r);
         const sumRmb = (rows) => rows.reduce((acc, d) => acc + (Number(d.rmb_cost) || 0), 0);
         const numOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -158,7 +164,7 @@
             <div class="hero-pills">
               <span>可变 ¥ ${sharedModule.fmtMoney(variableRmb)}</span>
               <span>固定 ¥ ${sharedModule.fmtMoney(fixedRmb)}</span>
-              <span>额外 ¥ ${sharedModule.fmtMoney(extraRmb)}</span>
+              ${extraRmb > 0 ? `<span>旧额外 ¥ ${sharedModule.fmtMoney(extraRmb)}</span>` : ''}
               <span>${sharedModule.esc(locationsModule.regionName(s['居住区域']))} · ${sharedModule.esc(s['计算月份'] || '')}</span>
             </div>
           </div>`;
@@ -182,7 +188,7 @@
           }
         }
 
-        // 三张明细表：每日预算明细通栏，固定/额外各一张卡片；合计显示在卡片标题右侧
+        // 两张明细表：每日预算与订阅月均固定预算（含旅居一次性费用）。
         service.buildTable(
           sharedModule.$('#daily-details-table'),
           DAILY_DETAIL_HEADERS,
@@ -245,6 +251,7 @@
       }
 
       Object.assign(service, {
+        BUDGET_MODEL,
         DAILY_DETAIL_HEADERS,
         FIXED_DETAIL_HEADERS,
         EXTRA_DETAIL_HEADERS,

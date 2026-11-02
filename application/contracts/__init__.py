@@ -9,6 +9,7 @@ from .service import (
     _validate_year_month as validate_year_month,
     _parse_ymd as parse_ymd,
     _annual_bounds as annual_bounds,
+    _trailing_year_bounds as trailing_year_bounds,
     RangeIn,
     ItineraryEntryIn,
     CalculateRequest,

@@ -11,6 +11,7 @@ from .service import (
     _tab_expiry_timer as tab_expiry_timer,
     _cancel_shutdown_timer as cancel_shutdown_timer,
     _arm_shutdown_timer as arm_shutdown_timer,
+    _finish_shutdown as finish_shutdown,
     _cancel_tab_expiry_timer_locked as cancel_tab_expiry_timer_locked,
     _schedule_tab_expiry_check_locked as schedule_tab_expiry_check_locked,
     _expire_stale_tabs as expire_stale_tabs,

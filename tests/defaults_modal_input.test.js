@@ -11,12 +11,12 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createApp } = require('./helpers/dom-stub.js');
+const { createApp, defaultMetaFixture } = require('./helpers/dom-stub.js');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function fixedInput(doc, region, curr) {
-  return doc.querySelector(`.defaults-editor input[data-cat="fixed"][data-loc="${region}"][data-curr="${curr}"]`);
+function defaultSubscriptionInput(doc, field) {
+  return doc.querySelector(`[data-default-subscription-id="default-one"] [data-default-subscription-field="${field}"]`);
 }
 
 /** 逐字符输入（输入框保持焦点，值随按键累积），返回过程中的焦点变化 */
@@ -33,7 +33,13 @@ function typeInto(doc, input, text) {
 }
 
 async function openDefaultsWithAll(region) {
-  const { doc, app } = createApp();
+  const meta = defaultMetaFixture();
+  meta.default_subscriptions_configured = true;
+  meta.default_subscriptions = [{
+    id: 'default-one', name: '默认会员', currency: 'CNY', cycle: 'monthly',
+    amount: 29, includeByDefault: true,
+  }];
+  const { doc, app } = createApp({ meta });
   await app.init();
   await sleep(50);
   app.state.region = region;
@@ -49,8 +55,8 @@ async function openDefaultsWithAll(region) {
 
 test('输入时不会替换正在编辑的输入框节点（连续输入不丢字符、不丢焦点）', async () => {
   const { doc, app } = await openDefaultsWithAll('Overseas');
-  const input = fixedInput(doc, 'Mainland', 'CNY');
-  assert.ok(input, '弹窗里应显示内地的固定预算行');
+  const input = defaultSubscriptionInput(doc, 'name');
+  assert.ok(input, '弹窗里应显示默认订阅项目');
 
   input.focus();
   const nodeIdentity = [];
@@ -60,7 +66,7 @@ test('输入时不会替换正在编辑的输入框节点（连续输入不丢�
     input.value = value;
     input.dispatchEvent({ type: 'input', bubbles: true, target: input });
     nodeIdentity.push({
-      sameNode: fixedInput(doc, 'Mainland', 'CNY') === input,
+      sameNode: defaultSubscriptionInput(doc, 'name') === input,
       focused: doc.activeElement === input,
     });
   }
@@ -71,29 +77,29 @@ test('输入时不会替换正在编辑的输入框节点（连续输入不丢�
     { sameNode: true, focused: true },
   ], '输入过程中输入框节点必须保持不变且保持焦点（整块重绘会导致后续按键写进旧节点）');
   assert.equal(input.value, '957');
-  assert.equal(app.state.defaultsDraft.standards.fixed.Mainland.CNY, 957);
-  assert.equal(app.state.defaultsDraft.standards.fixed.Overseas.CNY, 249, '不应改到境外');
+  assert.equal(app.state.defaultsDraft.subscriptions[0].name, '957');
 });
 
 test('弹窗里改默认预算不会改动当月数值', async () => {
   const { doc, app } = await openDefaultsWithAll('Overseas');
   const monthBefore = JSON.stringify(app.state.standards);
-  const input = fixedInput(doc, 'Mainland', 'CNY');
+  const input = defaultSubscriptionInput(doc, 'amount');
   input.focus();
   const steps = typeInto(doc, input, '120');
 
   assert.equal(steps.every((s) => s.focused), true, '每一步都应保持焦点');
-  assert.equal(app.state.defaultsDraft.standards.fixed.Mainland.CNY, 120);
+  assert.equal(app.state.defaultsDraft.subscriptions[0].amount, 120);
   assert.equal(JSON.stringify(app.state.standards), monthBefore, '当月标准不应被弹窗编辑改动');
 });
 
-test('各类别（可变 / 固定 / 额外 / 旅居每日单次）输入都保持节点与焦点', async () => {
+test('每日、旅居与默认订阅输入都保持节点与焦点', async () => {
   const { doc, app } = await openDefaultsWithAll('Mainland');
   const cases = [
     { sel: '.defaults-editor input[data-cat="variable"][data-loc="Shenzhen"]', text: '123' },
-    { sel: '.defaults-editor input[data-cat="extra"][data-loc="extra"][data-curr="CNY"]', text: '55' },
     { sel: '.defaults-editor input[data-cat="travel"][data-loc="Shanghai"][data-curr="CNY"][data-field="daily"]', text: '199' },
     { sel: '.defaults-editor input[data-cat="travel"][data-loc="Shanghai"][data-curr="CNY"][data-field="once"]', text: '299' },
+    { sel: '[data-default-subscription-id="default-one"] [data-default-subscription-field="name"]', text: '会员' },
+    { sel: '[data-default-subscription-id="default-one"] [data-default-subscription-field="amount"]', text: '55' },
   ];
   for (const c of cases) {
     const input = doc.querySelector(c.sel);
@@ -108,24 +114,25 @@ test('各类别（可变 / 固定 / 额外 / 旅居每日单次）输入都保�
 
 test('标记随输入即时出现，且不会破坏同行的其它输入框', async () => {
   const { doc, app } = await openDefaultsWithAll('Mainland');
-  const cny = fixedInput(doc, 'Mainland', 'CNY');
-  const usd = fixedInput(doc, 'Mainland', 'USD');
-  assert.ok(cny && usd);
-  assert.equal(cny.closest('.budget-row').querySelector('.chip-diff'), null, '初始不应有差异标记');
+  const daily = doc.querySelector('.defaults-editor input[data-cat="variable"][data-loc="Shenzhen"]');
+  const subscription = defaultSubscriptionInput(doc, 'name');
+  assert.ok(daily && subscription);
+  assert.equal(daily.closest('.budget-row').querySelector('.chip-diff'), null, '初始不应有差异标记');
 
-  cny.focus();
-  typeInto(doc, cny, '200');
-  const chip = cny.closest('.budget-row').querySelector('.chip-diff');
+  daily.focus();
+  typeInto(doc, daily, '200');
+  const chip = daily.closest('.budget-row').querySelector('.chip-diff');
   assert.ok(chip, '改动后应出现「与已保存默认值不同」标记');
   assert.match(chip.textContent, /与已保存默认值不同/);
-  assert.equal(fixedInput(doc, 'Mainland', 'USD'), usd, '同一块里的其它输入框不应被重建');
+  assert.equal(defaultSubscriptionInput(doc, 'name'), subscription, '订阅输入框不应被预算标记刷新重建');
 
   // 还原回已保存默认值 → 标记消失
-  const row = cny.closest('.budget-row');
+  const row = daily.closest('.budget-row');
   const revert = row.querySelector('button[data-action="revert-row"]');
   assert.ok(revert, '标记里应有还原按钮');
   revert.dispatchEvent({ type: 'click', bubbles: true, target: revert });
-  assert.equal(fixedInput(doc, 'Mainland', 'CNY').closest('.budget-row').querySelector('.chip-diff'), null,
+  assert.equal(doc.querySelector('.defaults-editor input[data-cat="variable"][data-loc="Shenzhen"]')
+    .closest('.budget-row').querySelector('.chip-diff'), null,
     '还原后标记应消失');
 });
 

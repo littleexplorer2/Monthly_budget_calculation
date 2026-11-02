@@ -34,6 +34,25 @@ function annualRates(year) {
   };
 }
 
+function assetRates(year) {
+  return {
+    kind: 'trailing_365_day_close_average',
+    window_days: 365,
+    start_date: `${year - 1}-09-29`,
+    requested_through: `${year}-09-28`,
+    observed_through: `${year}-09-25`,
+    source: 'Yahoo Finance',
+    price_field: 'Close',
+    non_trading_days: 'excluded',
+    stats: {
+      HKD: { average: 0.92, observation_count: 250, first_date: `${year - 1}-09-29`, last_date: `${year}-09-25` },
+      USD: { average: 7.2, observation_count: 250, first_date: `${year - 1}-09-29`, last_date: `${year}-09-25` },
+    },
+    errors: {},
+    complete: true,
+  };
+}
+
 function appState(year) {
   // 布局夹具中的已保存结果与本次行情使用同一观测数量，避免正确的过期检测清空总额。
   const rateStats = annualRates(year).stats;
@@ -47,7 +66,7 @@ function appState(year) {
       '总预算(人民币)': total,
     },
     daily_details: [], fixed_details: [], extra_details: [], warnings: [],
-    region, includeTravel, stale: false,
+    region, includeTravel, budgetModel: 'subscription-fixed-monthly-equivalent-v2', stale: false,
   });
   return {
     version: 1,
@@ -59,6 +78,15 @@ function appState(year) {
     resultsByMonth: {
       [`${year}-01`]: monthly(1, 12000, 'Mainland', false),
       [`${year}-02`]: monthly(2, 14500, 'Overseas', true),
+    },
+    subscriptionsByMonth: {
+      [`${year}-09`]: {
+        items: [
+          { id: 'cny-monthly', name: '本地会员', currency: 'CNY', cycle: 'monthly', amount: 29, included: true, includeByDefault: true },
+          { id: 'hkd-yearly', name: '香港年费', currency: 'HKD', cycle: 'yearly', amount: 1200, included: true, includeByDefault: true },
+          { id: 'usd-monthly', name: '海外服务', currency: 'USD', cycle: 'monthly', amount: 10, included: true, includeByDefault: true },
+        ],
+      },
     },
     annualBudgetsByYear: { [year]: { CNY: 1000, USD: 500 } },
     annualResultsByYear: {
@@ -73,6 +101,17 @@ function appState(year) {
           { currency: 'USD', amount: 500, average_rate: 7.123456, observation_count: rateStats.USD.observation_count, cny_amount: 3561.73 },
         ],
         errors: {},
+      },
+    },
+    assetPortfoliosById: {
+      current: {
+        calculationBase: { CNY: 10000, HKD: 1000, USD: 1000 },
+        rates: { CNY: 1, HKD: 999, USD: 999 },
+        items: [
+          { id: 'cash-cny', kind: 'cash', location: '深圳', name: '活期', purpose: 'reserve', currency: 'CNY', amount: 1000 },
+          { id: 'term-usd', kind: 'term', location: '香港', name: '定期', purpose: 'other', currency: 'USD', amount: 1000 },
+          { id: 'invest-hkd', kind: 'investment', location: '香港', name: '投资', purpose: 'other', currency: 'HKD', amount: 1000 },
+        ],
       },
     },
   };
@@ -107,6 +146,7 @@ function startMockServer() {
     if (pathname === '/api/state') return jsonResponse(res, req.method === 'GET' ? state : {});
     if (pathname === '/api/network-check') return jsonResponse(res, { ok: true });
     if (pathname === '/api/tabs/register' || pathname === '/api/tabs/unregister') return jsonResponse(res, { ok: true });
+    if (pathname === '/api/asset-rates') return jsonResponse(res, assetRates(year));
     if (pathname === '/api/annual-rates') return jsonResponse(res, annualRates(Number(parsed.searchParams.get('year')) || year));
     if (pathname === '/api/annual-budget') return jsonResponse(res, state.annualResultsByYear[year]);
     if (pathname.startsWith('/api/')) return jsonResponse(res, {});
@@ -221,6 +261,7 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
         bodyBackground: getComputedStyle(document.body).backgroundColor,
         headerBackground: getComputedStyle(header).backgroundImage,
         headerBackdrop: getComputedStyle(header).backdropFilter || getComputedStyle(header).webkitBackdropFilter,
+        headerPosition: getComputedStyle(header).position,
         headerRadius: getComputedStyle(header).borderRadius,
         header: rect(header), month: rect(month), context: rect(context), options: rect(options), subnav: rect(subnav), actions: rect(actions),
       };
@@ -228,11 +269,80 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
     assert.match(shell.bodyBackground, /rgb\((?:[0-9]|1[0-9]|2[0-9]),\s*(?:[0-9]|1[0-9]|2[0-9]),\s*(?:[0-9]|1[0-9]|2[0-9])\)/,
       '页面必须使用深色背景');
     assert.notEqual(shell.headerBackdrop, 'none', '全局栏应启用液态玻璃模糊');
+    assert.equal(shell.headerPosition, 'sticky', '全局栏应固定在视口顶部');
     assert.match(shell.headerRadius, /1[8-9]px|2[0-9]px/);
     assert.ok(shell.header.left > 0 && shell.header.right < 1280, '全局栏应悬浮并与视口两侧留空');
     assert.ok(shell.month.top >= shell.header.top && shell.month.bottom <= shell.header.bottom, '月份控件应位于全局栏内');
     assert.ok(shell.options.right <= shell.subnav.left + 2, '预算选项应位于子分区左侧');
     assert.ok(shell.subnav.right <= shell.actions.left + 2, '操作按钮应位于子分区右侧');
+
+    await cdp.evaluate(`document.querySelector('.section-nav-item[data-tab="subscriptions"]').click()`);
+    await sleep(100);
+    const subscriptions = await cdp.evaluate(`(() => {
+      const cards = [...document.querySelectorAll('#subscription-list .subscription-currency-card')]
+        .map((node) => { const r = node.getBoundingClientRect(); return { left:r.left, right:r.right, top:r.top, width:r.width }; });
+      const option = document.querySelector('#subscription-list select option');
+      const optionStyle = option ? getComputedStyle(option) : null;
+      return {
+        cards,
+        ledeCount: document.querySelectorAll('#tab-subscriptions > .view-head .lede').length,
+        toggleText: document.querySelector('#subscription-list .subscription-toggle span').textContent,
+        toggleFits: (() => {
+          const node = document.querySelector('#subscription-list .subscription-toggle');
+          return node.scrollWidth <= node.clientWidth + 1;
+        })(),
+        optionColor: optionStyle && optionStyle.color,
+        optionBackground: optionStyle && optionStyle.backgroundColor,
+        horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    })()`);
+    assert.equal(subscriptions.cards.length, 3);
+    assert.equal(subscriptions.ledeCount, 0, '订阅管理标题下不应保留已指定删除的说明文字');
+    assert.equal(subscriptions.toggleText, '计入默认');
+    assert.equal(subscriptions.toggleFits, true, '计入默认勾选框文案必须完整显示');
+    assert.ok(subscriptions.cards.every((card) => Math.abs(card.top - subscriptions.cards[0].top) <= 2),
+      `桌面端 CNY / HKD / USD 订阅应并排：${JSON.stringify(subscriptions.cards)}`);
+    assert.ok(subscriptions.cards[0].right < subscriptions.cards[1].left
+      && subscriptions.cards[1].right < subscriptions.cards[2].left);
+    assert.notEqual(subscriptions.optionColor, subscriptions.optionBackground,
+      '下拉选项前景色与背景色必须可区分');
+    assert.ok(subscriptions.horizontalOverflow <= 1);
+
+    await cdp.evaluate(`document.querySelector('.section-nav-item[data-tab="standards"]').click()`);
+    const fixed = await cdp.evaluate(`(() => ({
+      rows: document.querySelectorAll('#fixed-standards-table .budget-row').length,
+      inputs: document.querySelectorAll('#fixed-standards-table input').length,
+      addButton: !!document.querySelector('#btn-add-fixed'),
+      text: document.querySelector('#fixed-standards-table').textContent,
+    }))()`);
+    assert.equal(fixed.rows, 3);
+    assert.equal(fixed.inputs, 0);
+    assert.equal(fixed.addButton, false);
+    assert.match(fixed.text, /29\.00 CNY/);
+    assert.match(fixed.text, /100\.00 HKD/);
+
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1191, height: 668, deviceScaleFactor: 1, mobile: false,
+    });
+    await cdp.evaluate(`document.querySelector('.section-nav-item[data-tab="itinerary"]').click()`);
+    await sleep(100);
+    const calendar = await cdp.evaluate(`(() => {
+      const card = document.querySelector('.calendar-sheet').getBoundingClientRect();
+      const cells = [...document.querySelectorAll('#cal-grid .cal-cell:not(.empty)')];
+      const first = cells[0].getBoundingClientRect();
+      return {
+        height: card.height,
+        cellRatio: first.width / first.height,
+        ledeCount: document.querySelectorAll('#tab-itinerary > .view-head .lede').length,
+      };
+    })()`);
+    assert.equal(calendar.ledeCount, 0, '行程安排标题下不应保留已指定删除的说明文字');
+    assert.ok(Math.abs(calendar.cellRatio - 1.2) <= 0.03,
+      `日历日期格应恢复原有 1.2 宽高比例：${JSON.stringify(calendar)}`);
+
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280, height: 900, deviceScaleFactor: 1, mobile: false,
+    });
     await cdp.evaluate(`document.querySelector('.primary-nav-item[data-section="dashboard"]').click()`);
     await waitForPage(
       cdp.evaluate,
@@ -244,10 +354,14 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
     const dashboardNavigation = await cdp.evaluate(`(() => {
       const bar = document.querySelector('#options-panel').getBoundingClientRect();
       const nav = document.querySelector('.dashboard-nav').getBoundingClientRect();
-      return { barCenter: (bar.left + bar.right) / 2, navCenter: (nav.left + nav.right) / 2 };
+      const order = [...document.querySelectorAll('.dashboard-nav-item')]
+        .map((node) => node.dataset.dashboardTab);
+      return { barCenter: (bar.left + bar.right) / 2, navCenter: (nav.left + nav.right) / 2, order };
     })()`);
     assert.ok(Math.abs(dashboardNavigation.barCenter - dashboardNavigation.navCenter) <= 2,
       '统计面板子分区导航应位于上下文栏中间');
+    assert.deepEqual(dashboardNavigation.order, ['analysis', 'assets', 'rates'],
+      '资产管理应位于年度总览和汇率走势之间');
 
     const desktop = await cdp.evaluate(`(() => {
       const annual = document.querySelector('.annual-budget-card').getBoundingClientRect();
@@ -316,7 +430,7 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
     assert.ok(mobile.htmlScrollWidth <= mobile.clientWidth + 1, '窄屏页面不得水平溢出');
     assert.ok(mobile.bodyScrollWidth <= mobile.clientWidth + 1, '窄屏 body 不得水平溢出');
 
-    for (const tab of ['standards', 'itinerary', 'result']) {
+    for (const tab of ['subscriptions', 'standards', 'itinerary', 'result']) {
       await cdp.evaluate(`document.querySelector('.section-nav-item[data-tab="${tab}"]').click()`);
       await sleep(100);
       const page = await cdp.evaluate(`(() => ({
@@ -331,6 +445,91 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
       assert.ok(page.bodyScrollWidth <= page.clientWidth + 1,
         `${tab} 页 body 不得产生水平溢出：${JSON.stringify(page)}`);
     }
+
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width: 1280, height: 900, deviceScaleFactor: 1, mobile: false,
+    });
+    await cdp.evaluate(`document.querySelector('.primary-nav-item[data-section="dashboard"]').click()`);
+    await cdp.evaluate(`document.querySelector('.dashboard-nav-item[data-dashboard-tab="assets"]').click()`);
+    await sleep(120);
+    const assets = await cdp.evaluate(`(() => ({
+      active: document.querySelector('#tab-assets').classList.contains('active'),
+      kpis: document.querySelectorAll('.asset-kpis article').length,
+      kpiSlots: [...document.querySelectorAll('.asset-kpi-values')].map((node) => node.children.length),
+      kpiCards: [...document.querySelectorAll('.asset-kpi-card')].map((node) => {
+        const r = node.getBoundingClientRect(); return { left:r.left, right:r.right, top:r.top, width:r.width };
+      }),
+      kpiAreaRight: document.querySelector('.asset-kpis').getBoundingClientRect().right,
+      placeholders: document.querySelectorAll('.asset-kpi-placeholder').length,
+      baseInputs: [...document.querySelectorAll('[data-asset-base-currency]')]
+        .map((node) => ({ currency: node.dataset.assetBaseCurrency, value: node.value })),
+      baseProgress: document.querySelector('#asset-base-progress').textContent,
+      rateCardWidths: [...document.querySelectorAll('.asset-rate-readout')]
+        .map((node) => node.getBoundingClientRect().width),
+      allocationCurrencies: [...document.querySelectorAll('.allocation-segment')]
+        .map((node) => node.dataset.allocationCurrency),
+      allocationWidths: [...document.querySelectorAll('.allocation-segment')]
+        .map((node) => Number.parseFloat(node.style.width)),
+      allocationLegends: [...document.querySelectorAll('.allocation-legend-item')]
+        .map((node) => node.dataset.allocationLegend),
+      rateInputs: document.querySelectorAll('[data-asset-rate]').length,
+      rateOutputs: [...document.querySelectorAll('[data-asset-rate-output]')].map((node) => node.textContent),
+      currentTotal: document.querySelector('#asset-current-total').textContent,
+      depositRate: document.querySelector('#asset-deposit-rate').textContent,
+      addButtons: document.querySelectorAll('#tab-assets [data-action="add-asset"]').length,
+      sections: [...document.querySelectorAll('.asset-sections-grid .asset-section')].map((node) => {
+        const r = node.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, width: r.width };
+      }),
+      clientWidth: document.documentElement.clientWidth,
+      htmlScrollWidth: document.documentElement.scrollWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+    }))()`);
+    assert.equal(assets.active, true);
+    assert.equal(assets.kpis, 2);
+    assert.deepEqual(assets.kpiSlots, [2, 3]);
+    assert.equal(assets.placeholders, 0);
+    assert.deepEqual(assets.baseInputs, [
+      { currency: 'CNY', value: '10000' },
+      { currency: 'HKD', value: '1000' },
+      { currency: 'USD', value: '1000' },
+    ]);
+    assert.equal(assets.baseProgress, '50.33%');
+    assert.ok(assets.rateCardWidths.every((width) => width <= 130),
+      `右侧只读汇率卡应保持紧凑：${JSON.stringify(assets.rateCardWidths)}`);
+    assert.deepEqual(assets.allocationCurrencies, ['CNY', 'HKD', 'USD']);
+    assert.deepEqual(assets.allocationLegends, ['CNY', 'HKD', 'USD']);
+    assert.ok(Math.abs(assets.allocationWidths.reduce((sum, value) => sum + value, 0) - 100) <= 0.01,
+      `三种货币应共用一个总长为 100% 的堆叠进度条：${JSON.stringify(assets.allocationWidths)}`);
+    assert.equal(assets.rateInputs, 0);
+    assert.deepEqual(assets.rateOutputs, ['0.920000', '7.200000']);
+    assert.match(assets.currentTotal, /9,120\.00/);
+    assert.equal(assets.depositRate, '89.91%');
+    assert.ok(assets.kpiCards[0].right < assets.kpiCards[1].left,
+      `两张组合指标卡应并排：${JSON.stringify(assets.kpiCards)}`);
+    assert.ok(assets.kpiAreaRight - assets.kpiCards[1].right >= 120,
+      `指标卡右侧应保留整行空白，不应在卡片内部制造占位：${JSON.stringify(assets.kpiCards)}`);
+    assert.equal(assets.addButtons, 3);
+    assert.equal(assets.sections.length, 3);
+    assert.ok(assets.sections.every((section) => Math.abs(section.top - assets.sections[0].top) <= 2),
+      `桌面端三个资产板块应等高起排：${JSON.stringify(assets.sections)}`);
+    assert.ok(assets.sections[0].right < assets.sections[1].left && assets.sections[1].right < assets.sections[2].left,
+      `桌面端三个资产板块应按活期、定期、投资横向分栏：${JSON.stringify(assets.sections)}`);
+    assert.ok(assets.htmlScrollWidth <= assets.clientWidth + 1,
+      `资产管理页不得产生页面级水平溢出：${JSON.stringify(assets)}`);
+    assert.ok(assets.bodyScrollWidth <= assets.clientWidth + 1,
+      `资产管理页 body 不得产生水平溢出：${JSON.stringify(assets)}`);
+
+    await cdp.evaluate(`window.scrollTo(0, document.documentElement.scrollHeight)`);
+    await sleep(100);
+    const stickyHeader = await cdp.evaluate(`(() => {
+      const header = document.querySelector('.site-header');
+      return { top: header.getBoundingClientRect().top, position: getComputedStyle(header).position, scrollY: window.scrollY };
+    })()`);
+    assert.ok(stickyHeader.scrollY > 0, `资产页应有足够内容验证粘性导航：${JSON.stringify(stickyHeader)}`);
+    assert.equal(stickyHeader.position, 'sticky');
+    assert.ok(Math.abs(stickyHeader.top - 12) <= 1,
+      `滚动后全局栏仍应悬浮固定在顶部：${JSON.stringify(stickyHeader)}`);
   } catch (error) {
     // 受限 Windows 沙箱有时能短暂建立 CDP，随后由系统终止 renderer；
     // 这与页面断言失败不同，按环境限制记录为 skip，且不尝试放宽沙箱。

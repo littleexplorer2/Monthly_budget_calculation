@@ -170,6 +170,15 @@ class AnnualRateAlgorithmTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "未来年份"):
                 contracts_service._annual_bounds(2027)
 
+    def test_trailing_year_bounds_cover_exactly_365_calendar_days(self):
+        with mock.patch.object(contracts_service.dt, "date", _FixedDate):
+            start, end = contracts_service._trailing_year_bounds()
+        self.assertEqual((start, end), ("2025-09-29", "2026-09-28"))
+        self.assertEqual(
+            (real_datetime.date.fromisoformat(end) - real_datetime.date.fromisoformat(start)).days + 1,
+            365,
+        )
+
     def test_failed_force_refresh_evicts_old_annual_close_cache(self):
         key = core_rates_cache._rates_cache_key(
             "ZZZ", "2026-01-01", "2026-09-28", "daily_close",

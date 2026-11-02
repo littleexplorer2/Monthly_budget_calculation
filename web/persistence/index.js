@@ -38,7 +38,8 @@
 
       const STATE_MAP_FIELDS = [
         'itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth',
-        'annualBudgetsByYear', 'annualResultsByYear',
+        'subscriptionsByMonth', 'annualBudgetsByYear', 'annualResultsByYear',
+        'assetPortfoliosById',
       ];
 
       function emptyBundle() {
@@ -51,8 +52,10 @@
           optionsByMonth: {},
           overridesByMonth: {},
           resultsByMonth: {},
+          subscriptionsByMonth: {},
           annualBudgetsByYear: {},
           annualResultsByYear: {},
+          assetPortfoliosById: {},
         };
       }
 
@@ -113,8 +116,10 @@
           optionsByMonth: sharedModule.deepClone(state.optionsByMonth),
           overridesByMonth: sharedModule.deepClone(state.overridesByMonth),
           resultsByMonth: service.compactResultsMap(state.resultsByMonth),
+          subscriptionsByMonth: sharedModule.deepClone(state.subscriptionsByMonth || {}),
           annualBudgetsByYear: service.cleanAnnualBudgetsMap(state.annualBudgetsByYear),
           annualResultsByYear: service.compactAnnualResultsMap(state.annualResultsByYear),
+          assetPortfoliosById: sharedModule.deepClone(state.assetPortfoliosById || {}),
         };
       }
 
@@ -173,13 +178,20 @@
 
       function mergePersistScope(left, right) {
         if (left === 'all' || right === 'all') return 'all';
-        return left || right || 'annual';
+        if (!left) return right || 'all';
+        if (!right) return left;
+        return left === right ? left : 'all';
       }
 
       function restrictStateWriteScope(writeRequest, scope) {
-        if (scope !== 'annual') return writeRequest;
-        for (const field of ['year', 'month', 'itineraryByMonth', 'optionsByMonth',
-          'overridesByMonth', 'resultsByMonth']) {
+        if (scope === 'all') return writeRequest;
+        const remove = scope === 'annual'
+          ? ['year', 'month', 'itineraryByMonth', 'optionsByMonth', 'overridesByMonth',
+            'resultsByMonth', 'subscriptionsByMonth', 'assetPortfoliosById']
+          : ['year', 'month', 'itineraryByMonth', 'optionsByMonth', 'overridesByMonth',
+            'resultsByMonth', 'subscriptionsByMonth', 'annualBudgetsByYear',
+            'annualResultsByYear'];
+        for (const field of remove) {
           delete writeRequest.payload[field];
           if (writeRequest.payload.baseValues) delete writeRequest.payload.baseValues[field];
         }
@@ -189,7 +201,7 @@
       function payloadTouchesMonthlyState(payload) {
         if (!payload || typeof payload !== 'object') return false;
         return ['year', 'month', 'itineraryByMonth', 'optionsByMonth',
-          'overridesByMonth', 'resultsByMonth'].some((field) => (
+          'overridesByMonth', 'resultsByMonth', 'subscriptionsByMonth'].some((field) => (
           Object.prototype.hasOwnProperty.call(payload, field)
           && (typeof payload[field] !== 'object' || payload[field] === null
             || Object.keys(payload[field]).length > 0)
@@ -313,6 +325,7 @@
           const snap = sharedModule.deepClone(bundle || service.snapshotBundle());
           snap.itineraryByMonth = service.trimLocalMonthMap(snap.itineraryByMonth);
           snap.optionsByMonth = service.trimLocalMonthMap(snap.optionsByMonth);
+          snap.subscriptionsByMonth = service.trimLocalMonthMap(snap.subscriptionsByMonth);
           localStorage.setItem(STORE_KEY, JSON.stringify(snap));
           localStorage.removeItem(OVERRIDES_KEY);
           localStorage.removeItem(RESULTS_KEY);
@@ -352,11 +365,17 @@
               if (data.resultsByMonth && typeof data.resultsByMonth === 'object') {
                 bundle.resultsByMonth = service.compactResultsMap(data.resultsByMonth);
               }
+              if (data.subscriptionsByMonth && typeof data.subscriptionsByMonth === 'object') {
+                bundle.subscriptionsByMonth = data.subscriptionsByMonth;
+              }
               if (data.annualBudgetsByYear && typeof data.annualBudgetsByYear === 'object') {
                 bundle.annualBudgetsByYear = service.cleanAnnualBudgetsMap(data.annualBudgetsByYear);
               }
               if (data.annualResultsByYear && typeof data.annualResultsByYear === 'object') {
                 bundle.annualResultsByYear = service.compactAnnualResultsMap(data.annualResultsByYear);
+              }
+              if (data.assetPortfoliosById && typeof data.assetPortfoliosById === 'object') {
+                bundle.assetPortfoliosById = data.assetPortfoliosById;
               }
             }
           }
@@ -404,8 +423,10 @@
         state.optionsByMonth = bundle.optionsByMonth || {};
         state.overridesByMonth = bundle.overridesByMonth || {};
         state.resultsByMonth = service.compactResultsMap(bundle.resultsByMonth || {});
+        state.subscriptionsByMonth = bundle.subscriptionsByMonth || {};
         state.annualBudgetsByYear = service.cleanAnnualBudgetsMap(bundle.annualBudgetsByYear || {});
         state.annualResultsByYear = service.compactAnnualResultsMap(bundle.annualResultsByYear || {});
+        state.assetPortfoliosById = bundle.assetPortfoliosById || {};
         monthlyModule.applyMonthOptions(monthlyModule.monthKey());
       }
 
@@ -470,10 +491,10 @@
       /** 唯一写入口。unload 只落本地缓存并返回 bundle，由注销请求带去服务端。 */
       function persist(mode, scope = 'all') {
         if (lifecycleModule.runtime.tabUnregistered && mode !== 'unload') return null;
-        if (scope !== 'annual') {
+        if (scope === 'all') {
           standardsModule.snapshotOverridesIntoState();
           runtime.sessionMonthlyTouched = true;
-        } else {
+        } else if (scope === 'annual') {
           runtime.sessionAnnualTouched = true;
         }
         const bundle = service.snapshotBundle();

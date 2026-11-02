@@ -168,6 +168,11 @@ def api_annual_rates(year: int, currencies: str | None=Query(default=None, descr
     return app_rates.annual_rates(year, currencies, refresh)
 
 
+@app.get('/api/asset-rates')
+def api_asset_rates(currencies: str | None=Query(default='HKD,USD', description='资产换算币种，缺省为 HKD、USD'), refresh: bool=Query(default=False, description='为 true 时跳过实际交易日 Close 进程内缓存')):
+    return app_rates.asset_rates(currencies, refresh)
+
+
 @app.post('/api/annual-budget')
 def api_annual_budget(req: app_contracts.AnnualBudgetRequest):
     return app_budget.annual_budget(req)

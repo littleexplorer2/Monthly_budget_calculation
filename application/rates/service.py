@@ -413,6 +413,25 @@ def _annual_rates_payload(year: int, start: str, end: str, rates: dict[str, pd.S
     }
 
 
+def _asset_rates_payload(start: str, end: str, rates: dict[str, pd.Series],
+                         order: list[str], errors: dict[str, str] | None = None) -> dict:
+    """资产换算使用的最近 365 天实际交易日 Close 均值。"""
+    stats = rates_core.annual_rate_stats(rates, order)
+    return {
+        "kind": "trailing_365_day_close_average",
+        "window_days": 365,
+        "start_date": start,
+        "requested_through": end,
+        "observed_through": _annual_observed_through(stats),
+        "source": "Yahoo Finance",
+        "price_field": "Close",
+        "non_trading_days": "excluded",
+        "stats": stats,
+        "errors": errors or {},
+        "complete": not bool(errors),
+    }
+
+
 
 NETWORK_CHECK_TIMEOUT = 8.0
 
@@ -513,3 +532,12 @@ def api_annual_rates(year: int,
     curr_list = app_metadata.parse_currencies(currencies)
     rates, errors = _fetch_annual_close_rates(curr_list, start, end, refresh=refresh)
     return _annual_rates_payload(year, start, end, rates, curr_list, errors)
+
+
+def api_asset_rates(currencies: str | None = "HKD,USD",
+                    refresh: bool = False):
+    """资产参考汇率：最近 365 天实际交易日 Close 算术平均。"""
+    start, end = app_contracts.trailing_year_bounds()
+    curr_list = app_metadata.parse_currencies(currencies)
+    rates, errors = _fetch_annual_close_rates(curr_list, start, end, refresh=refresh)
+    return _asset_rates_payload(start, end, rates, curr_list, errors)

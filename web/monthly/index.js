@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.monthly = Object.freeze({
-    dependencies: Object.freeze(["http","calendar","feedback","itinerary","locations","navigation","network","persistence","rates","results","shared","standards","standardsView","state","travel"]),
-    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["http","calendar","feedback","itinerary","locations","navigation","network","persistence","rates","results","shared","standards","standardsView","state","subscriptions","travel"]),
+    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       function monthKey() { return `${state.year}-${sharedModule.pad2(state.month)}`; }
@@ -61,12 +61,15 @@
       }
 
       function hasMonthData(key) {
-        return [
+        const regularData = [
           state.itineraryByMonth,
           state.optionsByMonth,
           state.overridesByMonth,
           state.resultsByMonth,
         ].some((map) => service.monthMapHasData(map, key));
+        const subscriptions = state.subscriptionsByMonth && state.subscriptionsByMonth[key];
+        return regularData || !!(subscriptions && Array.isArray(subscriptions.items)
+          && subscriptions.items.length);
       }
 
       function confirmMonthCreation(year, month) {
@@ -114,6 +117,7 @@
         const requestRegion = state.region === 'Overseas' ? 'Overseas' : 'Mainland';
         const requestIncludeTravel = !!state.includeTravel;
         const requestTravelLocations = requestIncludeTravel ? travelModule.selectedTravelList() : [];
+        subscriptionsModule.syncCurrentMonth();
         const requestStandards = standardsModule.activeStandardsOverride();
         const itin = itineraryModule.currentItinerary();
         const entries = Object.keys(itin)
@@ -193,8 +197,11 @@
         state.customLocations = [];
         state.customCurrencies = {};
         standardsModule.loadOverrides();                                  // 该月保存的标准修改（含自定义地点/币种）
+        subscriptionsModule.ensureMonth();
+        subscriptionsModule.syncCurrentMonth();
         state.calcResult = resultsModule.loadResultForMonth(service.monthKey()); // 该月保存的计算结果
         standardsViewModule.renderStandards();
+        subscriptionsModule.render();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
         if (state.calcResult) resultsModule.renderResult();
@@ -205,6 +212,7 @@
       /** 重绘所有随月份变化的界面；外壳初始化和月份导航共用这一入口。 */
       function renderMonthContext() {
         sharedModule.$('#month-label').textContent = `${state.year}年${sharedModule.pad2(state.month)}月`;
+        subscriptionsModule.render();
         service.syncOptionsUI();
         sharedModule.$('#itinerary-month').textContent = `${state.year}年${state.month}月`;
         sharedModule.$('#rates-title').textContent = `${state.year}年${state.month}月 汇率走势（兑人民币）`;
@@ -233,6 +241,7 @@
         const targetKey = `${year}-${sharedModule.pad2(month)}`;
         const createsMonth = !service.hasMonthData(targetKey);
         if (createsMonth && !service.confirmMonthCreation(year, month)) return false;
+        if (createsMonth) subscriptionsModule.unsuppressMonth(targetKey);
 
         // 只有确认导航后才保存已有当前月；空白来源月也不能因离开而被自动创建。
         const sourceKey = service.monthKey();

@@ -3,7 +3,7 @@
 PYTHON_MODULES = {
     "core": ("standards", "budget", "rates", "storage"),
     "application": (
-        "config", "defaults", "contracts", "rates", "state", "lifecycle",
+        "config", "defaults", "contracts", "rates", "state", "backups", "lifecycle",
         "repository", "budget", "metadata", "api", "startup",
     ),
 }

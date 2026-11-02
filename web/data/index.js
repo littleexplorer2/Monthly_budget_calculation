@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.data = Object.freeze({
-    dependencies: Object.freeze(["analysis","annual","http","calendar","feedback","itinerary","monthly","persistence","results","shared","standards","standardsView","state","travel"]),
-    create({ analysis: analysisModule, annual: annualModule, http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, monthly: monthlyModule, persistence: persistenceModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["analysis","annual","assets","http","calendar","feedback","itinerary","monthly","persistence","results","shared","standards","standardsView","state","subscriptions","travel"]),
+    create({ analysis: analysisModule, annual: annualModule, assets: assetsModule, http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, monthly: monthlyModule, persistence: persistenceModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       /* --------------------------------------------------------------------------
@@ -26,6 +26,9 @@
         Object.keys(state.optionsByMonth || {}).forEach((m) => months.add(m));
         Object.keys(standardsModule.loadOverridesMap()).forEach((m) => months.add(m));
         Object.keys(resultsModule.loadResultsMap()).forEach((m) => months.add(m));
+        Object.entries(state.subscriptionsByMonth || {}).forEach(([m, snapshot]) => {
+          if (snapshot && Array.isArray(snapshot.items)) months.add(m);
+        });
         let rateMonths = [];
         try {
           const d = await apiModule.api('/api/data/rates', { timeout: 10000 });
@@ -39,9 +42,16 @@
           ...Object.keys(state.annualResultsByYear || {}),
         ])).sort();
         if (!listBox) return;
-        if (!list.length && !annualYears.length) {
+        const assetPortfolio = state.assetPortfoliosById && state.assetPortfoliosById.current;
+        const assetCount = assetPortfolio && Array.isArray(assetPortfolio.items) ? assetPortfolio.items.length : 0;
+        if (!list.length && !annualYears.length && !assetPortfolio) {
           listBox.innerHTML = '<p class="empty">暂无已保存的数据</p>';
         } else {
+          const assetHtml = assetPortfolio ? `<div class="data-row" data-portfolio="current">
+              <span class="data-month">资产管理</span>
+              <span class="data-tags"><i class="tag">${assetCount} 个资产条目</i><i class="tag">参考汇率与计算基数</i></span>
+              <span class="data-mark">当前资产</span>
+            </div>` : '';
           const annualHtml = annualYears.map((year) => {
             const tags = [];
             if (state.annualBudgetsByYear && state.annualBudgetsByYear[year]) tags.push('全年金额');
@@ -60,6 +70,8 @@
             if (state.optionsByMonth && state.optionsByMonth[m]) tags.push('计算选项');
             if (standardsModule.loadOverridesMap()[m]) tags.push('标准修改');
             if (resultsModule.loadResultsMap()[m]) tags.push('计算结果');
+            if (state.subscriptionsByMonth && state.subscriptionsByMonth[m]
+                && Array.isArray(state.subscriptionsByMonth[m].items)) tags.push('订阅项目');
             if (rateMonths.includes(m)) tags.push('汇率数据');
             const cur = m === monthlyModule.monthKey() ? '<span class="data-mark">（当前月）</span>' : '';
             return `<div class="data-row" data-month="${sharedModule.esc(m)}">
@@ -69,7 +81,7 @@
               <button class="link danger" data-action="del-month" data-month="${sharedModule.esc(m)}">删除该月</button>
             </div>`;
           }).join('');
-          listBox.innerHTML = annualHtml + monthlyHtml;
+          listBox.innerHTML = assetHtml + annualHtml + monthlyHtml;
         }
         feedbackModule.setElVisible(sharedModule.$('#data-modal'), true);
       }
@@ -125,6 +137,8 @@
         const resMap = resultsModule.loadResultsMap();
         resMap[m] = {};
         state.resultsByMonth = persistenceModule.compactResultsMap(resMap);
+        if (!state.subscriptionsByMonth || typeof state.subscriptionsByMonth !== 'object') state.subscriptionsByMonth = {};
+        state.subscriptionsByMonth[m] = {};
         const stateDeleted = await persistenceModule.persist('now');
         if (!stateDeleted) {
           persistenceModule.applyBundle(backup);
@@ -134,8 +148,10 @@
           state.customLocations = [];
           state.customCurrencies = {};
           standardsModule.loadOverrides();
+          subscriptionsModule.syncCurrentMonth();
           state.calcResult = resultsModule.loadResultForMonth(monthlyModule.monthKey());
           standardsViewModule.renderStandards();
+          subscriptionsModule.render();
           calendarModule.renderLocChips();
           travelModule.renderTravelPicker();
           if (state.calcResult) resultsModule.renderResult(); else resultsModule.clearResult();
@@ -152,6 +168,8 @@
         delete state.optionsByMonth[m];
         delete state.overridesByMonth[m];
         delete state.resultsByMonth[m];
+        delete state.subscriptionsByMonth[m];
+        if (m === monthlyModule.monthKey()) subscriptionsModule.suppressMonth(m);
         persistenceModule.writeLocalCache(persistenceModule.snapshotBundle());
 
         let ratesDeleted = true;
@@ -166,10 +184,12 @@
           monthlyModule.applyMonthOptions(monthlyModule.monthKey());
           monthlyModule.syncOptionsUI();
           standardsModule.resetStandardsToDefault();
+          subscriptionsModule.syncCurrentMonth();
           state.customLocations = [];
           state.customCurrencies = {};
           state.calcResult = null;
           standardsViewModule.renderStandards();
+          subscriptionsModule.render();
           calendarModule.renderLocChips();
           travelModule.renderTravelPicker();
           resultsModule.clearResult();
@@ -181,17 +201,21 @@
         else feedbackModule.toast(`${m} 的行程等数据已删除，但汇率缓存删除失败，请重试`, 'warn');
       }
 
-      /** 清空全部保存数据（所有月份与全年预算状态 + 服务端全部汇率缓存） */
+      /** 清空全部保存数据（订阅、资产、所有月份与全年预算状态 + 服务端全部汇率缓存） */
       async function clearAllData() {
-        if (!window.confirm('确定清空所有保存的数据吗？包括全年预算、全部月份的行程、预算标准修改、计算结果与汇率缓存，删除后不可恢复。')) return;
+        if (!window.confirm('确定清空所有保存的数据吗？包括订阅、资产、全年预算、全部月份的行程、预算标准修改、计算结果与汇率缓存，删除后不可恢复。')) return;
         const backup = persistenceModule.snapshotBundle();
         state.itineraryByMonth = {};
         state.optionsByMonth = {};
         state.overridesByMonth = {};
         state.resultsByMonth = {};
+        state.subscriptionsByMonth = {};
         state.annualBudgetsByYear = {};
         state.annualResultsByYear = {};
+        state.assetPortfoliosById = {};
+        subscriptionsModule.suppressMonth(monthlyModule.monthKey());
         standardsModule.resetStandardsToDefault();
+        subscriptionsModule.syncCurrentMonth();
         state.customLocations = [];
         state.customCurrencies = {};
         state.calcResult = null;
@@ -211,8 +235,12 @@
           persistenceModule.applyBundle(backup);
           standardsModule.resetStandardsToDefault();
           standardsModule.loadOverrides();
+          subscriptionsModule.unsuppressMonth(monthlyModule.monthKey());
+          subscriptionsModule.syncCurrentMonth();
           state.calcResult = resultsModule.loadResultForMonth(monthlyModule.monthKey());
           standardsViewModule.renderStandards();
+          subscriptionsModule.render();
+          assetsModule.render();
           calendarModule.renderLocChips();
           travelModule.renderTravelPicker();
           if (state.calcResult) resultsModule.renderResult(); else resultsModule.clearResult();
@@ -232,6 +260,8 @@
           ratesError = err;
         }
         standardsViewModule.renderStandards();
+        subscriptionsModule.render();
+        assetsModule.render();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
         resultsModule.clearResult();

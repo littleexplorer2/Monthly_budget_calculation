@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
+import re
 import threading
 
 from application.config import DATA_DIR
@@ -26,6 +28,8 @@ _DEFAULTS_FILE = DATA_DIR / "defaults.json"
 _DEFAULTS_LOCK = threading.RLock()
 _SAVED_LOCATION_NAMES: dict[str, str] = {}
 _SAVED_CURRENCY_NAMES: dict[str, str] = {}
+_DEFAULT_SUBSCRIPTIONS: list[dict] = []
+_SUBSCRIPTIONS_CONFIGURED = False
 _DEFAULTS_LOADED_FROM_FILE = False
 _DEFAULTS_LOAD_ERROR: str | None = None
 
@@ -77,6 +81,8 @@ def default_standards_snapshot() -> dict:
             "fixed": copy.deepcopy(FIXED_BUDGET_STANDARDS),
             "extra": copy.deepcopy(EXTRA_BUDGET_STANDARDS),
             "travel": copy.deepcopy(TRAVEL_BUDGET_STANDARDS),
+            "subscriptions": copy.deepcopy(_DEFAULT_SUBSCRIPTIONS),
+            "subscriptions_configured": _SUBSCRIPTIONS_CONFIGURED,
             "location_names": dict(_SAVED_LOCATION_NAMES),
             "currency_names": dict(_SAVED_CURRENCY_NAMES),
             "customized": _DEFAULTS_LOADED_FROM_FILE,
@@ -84,7 +90,8 @@ def default_standards_snapshot() -> dict:
         }
         revision_payload = {
             key: snapshot[key]
-            for key in ("variable", "fixed", "extra", "travel",
+            for key in ("variable", "fixed", "extra", "travel", "subscriptions",
+                        "subscriptions_configured",
                         "location_names", "currency_names")
         }
         snapshot["revision"] = hashlib.sha256(json.dumps(
@@ -109,7 +116,63 @@ def _write_defaults_file(data: dict) -> None:
         atomic_write_text(_DEFAULTS_FILE, text)
 
 
-def _apply_defaults_dict(data: dict) -> None:
+def _normalize_subscription_defaults(raw) -> list[dict]:
+    """校验默认订阅目录；它属于应用默认配置，不参与底层预算公式。"""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("默认订阅项目必须是数组")
+    normalized = []
+    seen_ids = set()
+    for index, item in enumerate(raw):
+        path = f"默认订阅[{index}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{path} 必须是对象")
+        item_id = str(item.get("id", "")).strip()
+        if not item_id or len(item_id) > 64 or not re.fullmatch(r"[A-Za-z0-9._:-]+", item_id):
+            raise ValueError(f"{path}.id 必须是 1-64 位字母、数字或 ._:-")
+        if item_id in seen_ids:
+            raise ValueError(f"默认订阅项目 id 重复：{item_id}")
+        seen_ids.add(item_id)
+        name = str(item.get("name", "")).strip()
+        if not name or len(name) > 120:
+            raise ValueError(f"{path}.name 必须是 1-120 个字符")
+        currency = str(item.get("currency", "")).strip().upper()
+        if currency not in ("CNY", "HKD", "USD"):
+            raise ValueError(f"{path}.currency 只支持 CNY、HKD、USD")
+        cycle = str(item.get("cycle", "")).strip().lower()
+        if cycle not in ("monthly", "yearly"):
+            raise ValueError(f"{path}.cycle 只支持 monthly 或 yearly")
+        amount = item.get("amount")
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)) \
+                or not math.isfinite(float(amount)) or amount < 0:
+            raise ValueError(f"{path}.amount 必须是非负有限数字")
+        include_by_default = item.get("includeByDefault", True)
+        if not isinstance(include_by_default, bool):
+            raise ValueError(f"{path}.includeByDefault 必须是布尔值")
+        normalized.append({
+            "id": item_id,
+            "name": name,
+            "currency": currency,
+            "cycle": cycle,
+            "amount": float(amount),
+            "includeByDefault": include_by_default,
+        })
+    return normalized
+
+
+def _normalize_complete_defaults_payload(payload: dict) -> dict:
+    normalized = normalize_defaults_payload(
+        payload, default_extra=EXTRA_BUDGET_STANDARDS,
+    )
+    normalized["subscriptions"] = _normalize_subscription_defaults(
+        payload.get("subscriptions") if isinstance(payload, dict) else None,
+    )
+    return normalized
+
+
+def _apply_defaults_dict(data: dict, *, subscriptions_configured: bool | None = None) -> None:
+    global _SUBSCRIPTIONS_CONFIGURED
     _replace_mapping(VARIABLE_BUDGET_STANDARDS, data["variable"])
     _replace_mapping(FIXED_BUDGET_STANDARDS, data["fixed"])
     _replace_mapping(EXTRA_BUDGET_STANDARDS, data["extra"])
@@ -118,6 +181,11 @@ def _apply_defaults_dict(data: dict) -> None:
     _SAVED_LOCATION_NAMES.update(data.get("location_names") or {})
     _SAVED_CURRENCY_NAMES.clear()
     _SAVED_CURRENCY_NAMES.update(data.get("currency_names") or {})
+    _DEFAULT_SUBSCRIPTIONS.clear()
+    _DEFAULT_SUBSCRIPTIONS.extend(copy.deepcopy(data.get("subscriptions") or []))
+    _SUBSCRIPTIONS_CONFIGURED = (
+        "subscriptions" in data if subscriptions_configured is None else bool(subscriptions_configured)
+    )
     _refresh_all_budget_locations()
 
 
@@ -130,11 +198,9 @@ def save_default_standards(payload: dict, expected_revision: str | None = None) 
             raise DefaultsRevisionConflict(
                 "服务器默认标准已被另一个标签页修改；请刷新页面后重新编辑"
             )
-        normalized = normalize_defaults_payload(
-            payload, default_extra=EXTRA_BUDGET_STANDARDS,
-        )
+        normalized = _normalize_complete_defaults_payload(payload)
         _write_defaults_file(normalized)
-        _apply_defaults_dict(normalized)
+        _apply_defaults_dict(normalized, subscriptions_configured=True)
         _DEFAULTS_LOADED_FROM_FILE = True
         _DEFAULTS_LOAD_ERROR = None
         return normalized
@@ -142,7 +208,7 @@ def save_default_standards(payload: dict, expected_revision: str | None = None) 
 
 def restore_builtin_defaults(expected_revision: str | None = None) -> None:
     """删除已保存的默认标准文件，恢复 core.standards.builtin 内建值。"""
-    global _DEFAULTS_LOADED_FROM_FILE, _DEFAULTS_LOAD_ERROR
+    global _DEFAULTS_LOADED_FROM_FILE, _DEFAULTS_LOAD_ERROR, _SUBSCRIPTIONS_CONFIGURED
     with _DEFAULTS_LOCK:
         current_revision = default_standards_snapshot()["revision"]
         if expected_revision is not None and expected_revision != current_revision:
@@ -160,6 +226,8 @@ def restore_builtin_defaults(expected_revision: str | None = None) -> None:
         _replace_mapping(TRAVEL_BUDGET_STANDARDS, _BUILTIN_TRAVEL_BUDGET_STANDARDS)
         _SAVED_LOCATION_NAMES.clear()
         _SAVED_CURRENCY_NAMES.clear()
+        _DEFAULT_SUBSCRIPTIONS.clear()
+        _SUBSCRIPTIONS_CONFIGURED = False
         _refresh_all_budget_locations()
         _DEFAULTS_LOADED_FROM_FILE = False
         _DEFAULTS_LOAD_ERROR = None
@@ -180,14 +248,13 @@ def load_saved_defaults() -> bool:
             _DEFAULTS_LOAD_ERROR = None
             return False
         try:
-            normalized = normalize_defaults_payload(
-                data, default_extra=EXTRA_BUDGET_STANDARDS,
-            )
+            configured = "subscriptions" in data
+            normalized = _normalize_complete_defaults_payload(data)
         except ValueError as exc:
             _DEFAULTS_LOADED_FROM_FILE = False
             _DEFAULTS_LOAD_ERROR = f"默认预算标准校验失败：{exc}"
             return False
-        _apply_defaults_dict(normalized)
+        _apply_defaults_dict(normalized, subscriptions_configured=configured)
         _DEFAULTS_LOADED_FROM_FILE = True
         _DEFAULTS_LOAD_ERROR = None
         return True

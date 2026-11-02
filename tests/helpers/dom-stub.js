@@ -435,6 +435,8 @@ function defaultMetaFixture() {
         Bangkok: { THB: { daily: 1200, once: 800 } },
       },
     },
+    default_subscriptions: [],
+    default_subscriptions_configured: false,
     locations: [
       { key: 'Shenzhen', name: '深圳', category: 'variable', currency: 'CNY' },
       { key: 'HongKong', name: '香港', category: 'variable', currency: 'HKD' },
@@ -465,8 +467,10 @@ function defaultStateFixture() {
     optionsByMonth: {},
     overridesByMonth: {},
     resultsByMonth: {},
+    subscriptionsByMonth: {},
     annualBudgetsByYear: {},
     annualResultsByYear: {},
+    assetPortfoliosById: {},
   };
 }
 
@@ -478,6 +482,7 @@ function defaultStateFixture() {
  * @param {object|function} options.monthlyRates 可注入的 GET /api/rates 返回
  * @param {object|function} options.monthlyBudget 可注入的 POST /api/calculate 返回
  * @param {object|function} options.annualRates  可注入的 GET /api/annual-rates 返回
+ * @param {object|function} options.assetRates   可注入的 GET /api/asset-rates 返回
  * @param {object|function} options.annualBudget 可注入的 POST /api/annual-budget 返回
  */
 function createApp(options = {}) {
@@ -536,6 +541,24 @@ function createApp(options = {}) {
         return send(request.method === 'GET' ? initialState : {});
       }
       if (u.includes('/api/network-check')) return send({ ok: true });
+      if (u.includes('/api/asset-rates')) {
+        return send(await responseValue(options.assetRates, request, {
+          kind: 'trailing_365_day_close_average',
+          window_days: 365,
+          start_date: '2025-09-29',
+          requested_through: '2026-09-28',
+          observed_through: '2026-09-25',
+          source: 'Yahoo Finance',
+          price_field: 'Close',
+          non_trading_days: 'excluded',
+          stats: {
+            HKD: { average: 0.92, observation_count: 250, first_date: '2025-09-29', last_date: '2026-09-25' },
+            USD: { average: 7.2, observation_count: 250, first_date: '2025-09-29', last_date: '2026-09-25' },
+          },
+          errors: {},
+          complete: true,
+        }));
+      }
       if (u.includes('/api/annual-rates')) {
         return send(await responseValue(options.annualRates, request, {
           year: new Date().getFullYear(),
@@ -622,7 +645,9 @@ function createApp(options = {}) {
       renderAnnualBudget: modules.annual.renderAnnualBudget, loadAnnualRates: modules.annual.loadAnnualRates, calculateAnnualBudget: modules.annual.calculateAnnualBudget, invalidateAnnualResult: modules.annual.invalidateAnnualResult,
       annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyBundle, switchTab: modules.shell.switchTab, openSection: modules.navigation.openSection,
       collectAnalysisMonths: modules.analysis.collectAnalysisMonths, markCurrentResultStale: modules.results.markCurrentResultStale, addRange: modules.itinerary.addRange, deleteMonthData: modules.data.deleteMonthData,
-      loadRates: modules.rates.loadRates, calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth,
+      loadRates: modules.rates.loadRates, calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth, navigateToMonth: modules.monthly.navigateToMonth,
+      renderSubscriptions: modules.subscriptions.render, addSubscription: modules.subscriptions.addItem, updateSubscription: modules.subscriptions.updateField, subscriptionTotals: modules.subscriptions.totals, ensureSubscriptions: modules.subscriptions.ensureMonth,
+      renderAssets: modules.assets.render, loadAssetRates: modules.assets.loadRates, assetRateState: modules.assets.rateState, addAsset: modules.assets.addItem, updateAsset: modules.assets.updateField, updateAssetSetting: modules.assets.updateSetting, assetPortfolio: modules.assets.portfolio, assetSummary: modules.assets.compute,
     };
   `, context, { filename: 'app.js' });
 

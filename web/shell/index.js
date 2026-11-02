@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.shell = Object.freeze({
-    dependencies: Object.freeze(["analysis","annual","http","calendar","data","feedback","itinerary","locations","monthly","navigation","network","persistence","rates","results","shared","standards","standardsEditor","standardsView","state","travel"]),
-    create({ analysis: analysisModule, annual: annualModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["analysis","annual","assets","http","calendar","data","feedback","itinerary","locations","monthly","navigation","network","persistence","rates","results","shared","standards","standardsEditor","standardsView","state","subscriptions","travel"]),
+    create({ analysis: analysisModule, annual: annualModule, assets: assetsModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       /* --------------------------------------------------------------------------
@@ -38,7 +38,7 @@
         sharedModule.$('#btn-next-month').addEventListener('click', () => monthlyModule.changeMonth(1));
         sharedModule.$('#btn-this-month').addEventListener('click', monthlyModule.goThisMonth);
 
-        // 区域选择（选项面板分段按钮；固定预算表按区域过滤显示）
+        // 区域选择（订阅固定预算与区域无关，仍用于月度计算结果分类）。
         sharedModule.$('#region-seg').addEventListener('click', (ev) => {
           const btn = ev.target.closest('.seg-btn[data-region]');
           if (!btn || btn.dataset.region === state.region) return;
@@ -46,16 +46,14 @@
           persistenceModule.saveState(true);
           // 分段高亮即时更新
           sharedModule.$$('#region-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.region === state.region));
-          standardsViewModule.renderStandards();          // 刷新固定预算表（仅显示新区域）
+          standardsViewModule.renderStandards();
         });
 
         // 计算
         sharedModule.$('#btn-calculate').addEventListener('click', monthlyModule.calculate);
         sharedModule.$('#btn-recalc').addEventListener('click', monthlyModule.calculate);
 
-        // 预算标准输入（事件委托）
-        // 关键：按输入框所在的区域决定改哪一份数据——默认标准区改草稿，其余改当月标准。
-        // 两个区域同时可见，不能用全局展开状态判断。
+        // 当月预算标准输入（默认配置弹窗已移为独立顶层区域）。
         sharedModule.$('#tab-standards').addEventListener('input', (ev) => {
           const el = ev.target;
           if (!el.matches('input[data-cat]')) return;
@@ -66,12 +64,6 @@
             return;
           }
           el.classList.remove('invalid');
-          const inDefaultsEditor = !!el.closest('.defaults-editor');
-          if (inDefaultsEditor && state.defaultsDraft) {
-            standardsEditorModule.applyDefaultsInput(cat, loc, curr, field, v);
-            standardsEditorModule.refreshRowChip(cat, loc, curr, field, el);
-            return;
-          }
           standardsEditorModule.applyMonthInput(cat, loc, curr, field, v);
           standardsEditorModule.refreshRowChip(cat, loc, curr, field, el); // 「与默认值不同」标记即时出现/消失
         });
@@ -81,7 +73,6 @@
           const addBtn = ev.target.closest('[data-action="add-std"]');
           if (addBtn) { standardsEditorModule.openAddStandard(addBtn.dataset.cat, addBtn.dataset.region); return; }
           if (ev.target.closest('#btn-add-variable')) { standardsEditorModule.openAddStandard('variable'); return; }
-          if (ev.target.closest('#btn-add-fixed')) { standardsEditorModule.openAddStandard('fixed', state.region); return; }
           if (ev.target.closest('#btn-add-travel')) { standardsEditorModule.openAddStandard('travel'); return; }
           const rowBtn = ev.target.closest('button[data-action="revert-row"]');
           if (rowBtn) {
@@ -94,11 +85,79 @@
           if (btn && btn.dataset.loc) standardsEditorModule.deleteCustomStandard(btn.dataset.loc);
         });
 
-        // 默认预算标准弹窗：上下文栏按钮打开，✕ / 点击遮罩关闭，弹窗内保存或放弃
+        // 订阅项目：每月独立快照，勾选项目的月均币种合计直接驱动固定预算。
+        sharedModule.$('#btn-add-subscription').addEventListener('click', subscriptionsModule.addItem);
+        sharedModule.$('#subscription-list').addEventListener('input', (ev) => {
+          const field = ev.target.closest('input[data-subscription-field="name"], input[data-subscription-field="amount"]');
+          if (field) subscriptionsModule.updateField(field, { renderList: false });
+        });
+        sharedModule.$('#subscription-list').addEventListener('change', (ev) => {
+          const field = ev.target.closest('[data-subscription-field]');
+          if (field && !field.matches('input[data-subscription-field="name"], input[data-subscription-field="amount"]')) {
+            subscriptionsModule.updateField(field);
+          }
+        });
+        sharedModule.$('#subscription-list').addEventListener('click', (ev) => {
+          const button = ev.target.closest('button[data-action="delete-subscription"]');
+          const row = button && button.closest('.subscription-row');
+          if (row) subscriptionsModule.deleteItem(row.dataset.subscriptionId);
+        });
+
+        // 默认配置弹窗：预算金额与订阅默认值共用一份草稿，统一显式保存。
         sharedModule.$('#btn-defaults-modal').addEventListener('click', standardsEditorModule.openDefaultsModal);
         sharedModule.$('#btn-defaults-close').addEventListener('click', standardsEditorModule.requestCloseDefaultsModal);
-        sharedModule.$('#defaults-modal').addEventListener('click', (ev) => {
-          if (ev.target === ev.currentTarget) standardsEditorModule.requestCloseDefaultsModal(); // 点击遮罩关闭
+        const defaultsModal = sharedModule.$('#defaults-modal');
+        defaultsModal.addEventListener('input', (ev) => {
+          const el = ev.target;
+          if (el.matches('input[data-cat]')) {
+            const { cat, loc, curr, field } = el.dataset;
+            const v = Number(el.value);
+            if (!Number.isFinite(v) || v < 0) { el.classList.add('invalid'); return; }
+            el.classList.remove('invalid');
+            standardsEditorModule.applyDefaultsInput(cat, loc, curr, field, v);
+            standardsEditorModule.refreshRowChip(cat, loc, curr, field, el);
+            return;
+          }
+          const subscriptionField = el.closest(
+            'input[data-default-subscription-field="name"], input[data-default-subscription-field="amount"]',
+          );
+          if (subscriptionField && subscriptionsModule.updateDefaultField(subscriptionField)) {
+            standardsEditorModule.updateDefaultsHint();
+          }
+        });
+        defaultsModal.addEventListener('change', (ev) => {
+          const field = ev.target.closest('[data-default-subscription-field]');
+          if (field && !field.matches(
+            'input[data-default-subscription-field="name"], input[data-default-subscription-field="amount"]',
+          ) && subscriptionsModule.updateDefaultField(field)) standardsEditorModule.updateDefaultsHint();
+        });
+        defaultsModal.addEventListener('click', (ev) => {
+          if (ev.target === ev.currentTarget) { standardsEditorModule.requestCloseDefaultsModal(); return; }
+          const addSubscription = ev.target.closest('[data-action="add-default-subscription"]');
+          if (addSubscription) {
+            subscriptionsModule.addDefaultItem();
+            standardsEditorModule.updateDefaultsHint();
+            return;
+          }
+          const deleteSubscription = ev.target.closest('[data-action="delete-default-subscription"]');
+          if (deleteSubscription) {
+            const row = deleteSubscription.closest('.subscription-default-row');
+            if (row && subscriptionsModule.deleteDefaultItem(row.dataset.defaultSubscriptionId)) {
+              standardsEditorModule.updateDefaultsHint();
+            }
+            return;
+          }
+          const addBtn = ev.target.closest('[data-action="add-std"]');
+          if (addBtn) { standardsEditorModule.openAddStandard(addBtn.dataset.cat, addBtn.dataset.region); return; }
+          const rowBtn = ev.target.closest('button[data-action="revert-row"]');
+          if (rowBtn) {
+            const holder = rowBtn.closest('.chip-diff');
+            const ds = (holder && holder.dataset) || rowBtn.dataset;
+            standardsEditorModule.restoreDefaultEntry(ds.cat, ds.loc, ds.curr, ds.field || null);
+            return;
+          }
+          const deleteStandard = ev.target.closest('button[data-action="del-custom"]');
+          if (deleteStandard && deleteStandard.dataset.loc) standardsEditorModule.deleteCustomStandard(deleteStandard.dataset.loc);
         });
         sharedModule.$('#btn-save-defaults').addEventListener('click', standardsEditorModule.saveDefaultStandardsToServer);
         // 默认标准弹窗的显示范围开关：纯界面过滤，只重绘弹窗，绝不触发持久化
@@ -278,6 +337,26 @@
           });
         }
 
+        // 资产管理：计算基数和资产条目进入统一状态管线；最近一年汇率只读获取。
+        const assetsPanel = sharedModule.$('#tab-assets');
+        if (assetsPanel) {
+          assetsPanel.addEventListener('click', (ev) => {
+            const refreshRates = ev.target.closest('#btn-refresh-asset-rates');
+            if (refreshRates) { void assetsModule.loadRates(true); return; }
+            const add = ev.target.closest('button[data-action="add-asset"]');
+            if (add) { assetsModule.addItem(add.dataset.assetKind); return; }
+            const remove = ev.target.closest('button[data-action="delete-asset"]');
+            const row = remove && remove.closest('.asset-row');
+            if (row) assetsModule.deleteItem(row.dataset.assetId);
+          });
+          assetsPanel.addEventListener('change', (ev) => {
+            const setting = ev.target.closest('[data-asset-base-currency]');
+            if (setting) { assetsModule.updateSetting(setting); return; }
+            const field = ev.target.closest('[data-asset-field]');
+            if (field) assetsModule.updateField(field);
+          });
+        }
+
         // 数据管理弹窗
         sharedModule.$('#btn-data-manager').addEventListener('click', dataModule.openDataManager);
         const dataTop = sharedModule.$('#btn-data-manager-top');
@@ -346,9 +425,13 @@
 
         monthlyModule.syncOptionsUI();
         const restoredOverrides = standardsModule.loadOverrides();
+        subscriptionsModule.ensureMonth();
+        subscriptionsModule.syncCurrentMonth();
         state.calcResult = resultsModule.loadResultForMonth(monthlyModule.monthKey());
 
         standardsViewModule.renderStandards();
+        subscriptionsModule.render();
+        assetsModule.render();
         calendarModule.renderLocChips();
         travelModule.renderTravelPicker();
         navigationModule.renderNavigation();

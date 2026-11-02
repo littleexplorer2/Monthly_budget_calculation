@@ -8,6 +8,8 @@ import sys
 import threading
 import webbrowser
 from application import api as app_api
+from application import backups as app_backups
+from application import config as app_config
 from application import defaults as app_defaults
 from application import lifecycle as app_lifecycle
 from application import rates as app_rates
@@ -69,6 +71,7 @@ def main() -> None:
     print(f"行程数据：data/app-state.json（{len(itin_months)} 个有行程的月份）")
     print(f"内地/境外选项：{len(st.get('optionsByMonth') or {})} 个月")
     print(f"汇率缓存：data/rates/（{len(app_rates.list_rate_months())} 个月）")
+    print(f"退出备份：{app_config.BACKUP_DIR}（只追加，不参与预算计算）")
     if state_readable and not itin_months:
         print("提示：行程仍为空。请在「有旧行程的那台 Windows 浏览器」打开本页一次，再 git add data/app-state.json && git commit && git push")
     if args.open_browser:
@@ -88,4 +91,15 @@ def main() -> None:
         threading.Timer(1.2, webbrowser.open, args=(url,)).start()
 
     import uvicorn
-    uvicorn.run(app_api.app, host=args.host, port=args.port, log_level="info")
+    try:
+        uvicorn.run(app_api.app, host=args.host, port=args.port, log_level="info")
+    finally:
+        try:
+            backup_path = app_backups.create_data_backup(
+                reason="server-process-stopped",
+                state_lock=app_state.state_disk_lock,
+                defaults_lock=app_defaults.defaults_disk_lock,
+            )
+            logging.getLogger("budget-web").info("退出备份已创建：%s", backup_path)
+        except Exception:
+            logging.getLogger("budget-web").exception("服务已停止，但退出备份创建失败")

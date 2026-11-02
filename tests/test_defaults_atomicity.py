@@ -12,7 +12,7 @@ class DefaultsAtomicityTests(unittest.TestCase):
     def _payload(snapshot):
         return copy.deepcopy({
             key: snapshot[key]
-            for key in ("variable", "fixed", "extra", "travel",
+            for key in ("variable", "fixed", "extra", "travel", "subscriptions",
                         "location_names", "currency_names")
         })
 
@@ -77,7 +77,46 @@ class DefaultsAtomicityTests(unittest.TestCase):
                     )
             finally:
                 with defaults._DEFAULTS_LOCK:
-                    defaults._apply_defaults_dict(base_payload)
+                    defaults._apply_defaults_dict(
+                        base_payload,
+                        subscriptions_configured=before["subscriptions_configured"],
+                    )
+                    defaults._DEFAULTS_LOADED_FROM_FILE = before["customized"]
+                    defaults._DEFAULTS_LOAD_ERROR = before["load_error"]
+
+    def test_default_subscription_catalog_is_validated_and_revisioned(self):
+        before = defaults.default_standards_snapshot()
+        payload = self._payload(before)
+        payload["subscriptions"] = [{
+            "id": "sub-cloud",
+            "name": "云服务",
+            "currency": "USD",
+            "cycle": "yearly",
+            "amount": 120.0,
+            "includeByDefault": True,
+        }]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "defaults.json"
+            try:
+                with mock.patch.object(defaults, "_DEFAULTS_FILE", path):
+                    defaults.save_default_standards(payload, expected_revision=before["revision"])
+                    after = defaults.default_standards_snapshot()
+                    self.assertTrue(after["subscriptions_configured"])
+                    self.assertEqual(after["subscriptions"], payload["subscriptions"])
+                    self.assertNotEqual(after["revision"], before["revision"])
+                    persisted = path.read_text(encoding="utf-8")
+                    self.assertIn('"subscriptions"', persisted)
+
+                    invalid = self._payload(after)
+                    invalid["subscriptions"] = [{**payload["subscriptions"][0], "amount": -1}]
+                    with self.assertRaisesRegex(ValueError, "amount"):
+                        defaults.save_default_standards(invalid, expected_revision=after["revision"])
+            finally:
+                with defaults._DEFAULTS_LOCK:
+                    defaults._apply_defaults_dict(
+                        self._payload(before),
+                        subscriptions_configured=before["subscriptions_configured"],
+                    )
                     defaults._DEFAULTS_LOADED_FROM_FILE = before["customized"]
                     defaults._DEFAULTS_LOAD_ERROR = before["load_error"]
 

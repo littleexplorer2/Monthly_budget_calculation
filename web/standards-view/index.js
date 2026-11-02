@@ -105,32 +105,18 @@
         sharedModule.$('#variable-standards-table').innerHTML = html || '<p class="empty">暂无定居地点</p>';
 
         html = '';
-        for (const curr of locationsModule.orderedCurrencies(Object.keys(values.fixed[state.region] || {}))) {
-          const isCustomCurr = !state.monthStandardsSnapshot && (defs.fixed[state.region][curr] === undefined);
-          html += sharedModule.budgetRowHtml({
-            color: extraColor[curr] || '#7b61ff',
-            letter: curr.slice(0, 1),
-            title: `${sharedModule.esc(curr)}（${sharedModule.esc(locationsModule.currencyName(curr))}）${isCustomCurr ? ' <span class="muted">新建</span>' : ''}`,
-            sub: `${sharedModule.esc(locationsModule.regionName(state.region))} · 每月一次`,
-            chip: standardsEditorModule.monthDiffChip('fixed', state.region, curr, ''),
-            inputs: service.rowInputHtml('fixed', state.region, curr, '', values.fixed[state.region][curr])
-              + (isCustomCurr ? service.delCustomBtnHtml(curr) : ''),
-          });
-        }
-        sharedModule.$('#fixed-standards-table').innerHTML = html;
-
-        html = '';
+        const derivedFixed = (values.fixed && (values.fixed.Mainland || values.fixed.Overseas)) || {};
         for (const curr of sharedModule.EXTRA_CURRENCIES) {
           html += sharedModule.budgetRowHtml({
             color: extraColor[curr] || '#7b61ff',
             letter: curr.slice(0, 1),
             title: `${sharedModule.esc(curr)}（${sharedModule.esc(locationsModule.currencyName(curr))}）`,
-            sub: '额外 · 每月一次',
-            chip: standardsEditorModule.monthDiffChip('extra', 'extra', curr, ''),
-            inputs: service.rowInputHtml('extra', 'extra', curr, '', values.extra[curr]),
+            sub: '本月已勾选订阅的月均合计',
+            chip: '<span class="chip-diff chip-linked">订阅汇总</span>',
+            inputs: `<strong class="linked-fixed-amount">${sharedModule.fmtMoney(derivedFixed[curr] || 0)} ${sharedModule.esc(curr)}</strong>`,
           });
         }
-        sharedModule.$('#extra-standards-table').innerHTML = html;
+        sharedModule.$('#fixed-standards-table').innerHTML = html;
 
         service.renderTravelStandardsBlock();
       }
@@ -160,8 +146,6 @@
           return;
         }
         const values = state.defaultsDraft.standards;
-        const defs = state.meta.default_standards;
-        const extraColor = { CNY: '#00c48c', USD: '#3d7eff', HKD: '#ff8a3d' };
         const scope = service.defaultsScope();
 
         let html = '';
@@ -176,59 +160,29 @@
             inputs: service.rowInputHtml('variable', loc, curr, '', values.variable[loc][curr]),
           });
         }
-        const blocks = [];
-        blocks.push(`<div class="sheet-head"><h2>定居 · 可变预算</h2>
+        const budgetBlocks = [];
+        budgetBlocks.push(`<div class="sheet-head"><h3>各地点 / 币种每日固定预算 <span class="muted">· 原可变预算</span></h3>
             <button type="button" class="text-btn" data-action="add-std" data-cat="variable">＋ 新建定居地点</button></div>
           <div class="row-list" data-table="variable">${html || '<p class="empty">暂无定居地点</p>'}</div>`);
 
-        // 固定预算：勾选「显示所有默认预算」时内地、境外逐组显示（各自带「＋ 新建币种」，新建归该组）；
-        // 未勾选时只显示本月对应的那一个区域。
-        for (const region of scope.regions) {
-          const regionStd = (values.fixed || {})[region] || {};
-          const savedRegion = (defs.fixed || {})[region] || {};
-          html = '';
-          for (const curr of locationsModule.orderedCurrencies(Object.keys(regionStd))) {
-            const isCustomCurr = savedRegion[curr] === undefined;
-            html += sharedModule.budgetRowHtml({
-              color: extraColor[curr] || '#7b61ff',
-              letter: curr.slice(0, 1),
-              title: `${sharedModule.esc(curr)}（${sharedModule.esc(locationsModule.currencyName(curr))}）${isCustomCurr ? ' <span class="muted">新建</span>' : ''}`,
-              sub: `${sharedModule.esc(locationsModule.regionName(region))} · 每月一次`,
-              chip: standardsEditorModule.defaultsDiffChip('fixed', region, curr, ''),
-              inputs: service.rowInputHtml('fixed', region, curr, '', regionStd[curr]),
-            });
-          }
-          blocks.push(`<div class="sheet-head"><h2>固定预算 <span class="muted">· ${sharedModule.esc(locationsModule.regionName(region))}</span></h2>
-              <button type="button" class="text-btn" data-action="add-std" data-cat="fixed" data-region="${sharedModule.esc(region)}">＋ 新建币种</button></div>
-            <div class="row-list" data-table="fixed" data-region="${sharedModule.esc(region)}">${html || '<p class="empty">该区域暂无固定预算币种</p>'}</div>`);
-        }
-        html = '';
-        for (const curr of sharedModule.EXTRA_CURRENCIES) {
-          html += sharedModule.budgetRowHtml({
-            color: extraColor[curr] || '#7b61ff',
-            letter: curr.slice(0, 1),
-            title: `${sharedModule.esc(curr)}（${sharedModule.esc(locationsModule.currencyName(curr))}）`,
-            sub: '额外 · 每月一次',
-            chip: standardsEditorModule.defaultsDiffChip('extra', 'extra', curr, ''),
-            inputs: service.rowInputHtml('extra', 'extra', curr, '', values.extra[curr]),
-          });
-        }
-        blocks.push(`<div class="sheet-head"><h2>额外预算</h2></div>
-          <div class="row-list" data-table="extra">${html}</div>`);
-
         // 旅居预算：默认标准弹窗里始终显示（不再依赖「包含旅居」开关），
-        // 未勾选「显示所有默认预算」时只列本月行程里出现过的旅居地点。
-        blocks.push(service.renderTravelStandardsBlocks({
+        // 未勾选「显示全部旅居预算」时只列本月行程里出现过的旅居地点。
+        budgetBlocks.push(service.renderTravelStandardsBlocks({
           values,
           chipFor: standardsEditorModule.defaultsDiffChip,
           customs: [],
           locs: scope.travelLocs,
           emptyText: state.defaultsShowAll
             ? '暂无旅居地点'
-            : '本月行程里还没有旅居地点；勾选上方「显示所有默认预算」可查看全部。',
+            : '本月行程里还没有旅居地点；勾选上方「显示全部旅居预算」可查看全部。',
           ruleText: '每日预算 × 旅游天数 + 单次预算 × 月均汇率。',
         }));
-        host.innerHTML = blocks.join('');
+        host.innerHTML = `<section class="defaults-section defaults-budget-section">
+          <div class="defaults-section-head">
+            <div><span class="eyebrow">01 · DAILY & TRAVEL</span><h2>每日与旅居预算标准</h2></div>
+          </div>
+          <div class="defaults-section-body">${budgetBlocks.join('')}</div>
+        </section>${standardsEditorModule.defaultSubscriptionsHtml()}`;
       }
 
       /** 本月行程里出现过的旅居地点（按行程表里的先后顺序；只认有旅居标准的地点） */
@@ -245,37 +199,30 @@
       }
 
       /** 默认标准弹窗的显示范围（纯展示过滤，不改动任何数值）
-       *  - 勾选「显示所有默认预算」：内地 + 境外两组固定预算、全部旅居地点；
-       *  - 未勾选：只显示本月对应的部分——本月居住区域的固定预算 + 本月行程里的旅居地点
+       *  - 勾选「显示全部旅居预算」：显示全部旅居地点；
+       *  - 未勾选：只显示本月行程里的旅居地点
        *    （本月/草稿里新建的旅居地点始终保留，避免刚建完就看不见）。
        *  注意：`defaultsDraft.locations` 是**整份地点注册表**（含全部默认旅居地点），
        *  判断「新建」必须与服务器已保存默认标准比较，不能拿它当自定义列表。 */
       function defaultsScope() {
         const values = (state.defaultsDraft && state.defaultsDraft.standards) || {};
-        const fixed = values.fixed || {};
         const travel = values.travel || {};
         const savedTravel = Object.keys((((state.meta || {}).default_standards || {}).travel) || {});
         const customTravel = Object.keys(travel).filter((k) => !savedTravel.includes(k));
-
-        const orderedRegions = ['Mainland', 'Overseas'].filter((r) => fixed[r]);
-        for (const r of Object.keys(fixed)) if (!orderedRegions.includes(r)) orderedRegions.push(r);
 
         const allTravel = Object.keys(travel);
         for (const k of customTravel) if (!allTravel.includes(k)) allTravel.push(k);
 
         if (state.defaultsShowAll) {
-          return { regions: orderedRegions.length ? orderedRegions : [state.region], travelLocs: allTravel };
+          return { travelLocs: allTravel };
         }
 
-        const regions = orderedRegions.includes(state.region)
-          ? [state.region]
-          : (orderedRegions.length ? [orderedRegions[0]] : [state.region]);
         const travelLocs = service.monthItineraryTravelLocations(values);
         for (const k of customTravel) if (!travelLocs.includes(k)) travelLocs.push(k);
-        return { regions, travelLocs };
+        return { travelLocs };
       }
 
-      /** 默认标准弹窗里「显示所有默认预算」开关旁的说明文字 */
+      /** 默认标准弹窗里「显示全部旅居预算」开关旁的说明文字 */
       function updateDefaultsScopeHint() {
         const hint = sharedModule.$('#defaults-scope-hint');
         if (!hint) return;
@@ -284,22 +231,21 @@
           return;
         }
         if (state.defaultsShowAll) {
-          hint.textContent = '正在显示全部默认预算：内地 / 境外固定预算 + 全部旅居地点。';
+          hint.textContent = '正在显示全部每日预算与旅居地点。';
           return;
         }
         const scope = service.defaultsScope();
-        const region = scope.regions.length ? locationsModule.regionName(scope.regions[0]) : locationsModule.regionName(state.region);
         const n = scope.travelLocs.length;
-        hint.textContent = `只显示本月对应的部分：${region}固定预算`
-          + (n ? ` + 本月行程中的 ${n} 个旅居地点` : '（本月行程里暂无旅居地点）');
+        hint.textContent = n
+          ? `正在显示全部每日预算及本月行程中的 ${n} 个旅居地点。`
+          : '正在显示全部每日预算；本月行程里暂无旅居地点。';
       }
 
       function renderStandards() {
         service.renderMonthStandardsPanel();
         service.renderDefaultsPanel();
-        const regionText = `${locationsModule.regionName(state.region)}（${state.region}）`;
         const fixedRegionLabel = sharedModule.$('#fixed-region-label');
-        if (fixedRegionLabel) fixedRegionLabel.textContent = `· ${regionText}`;
+        if (fixedRegionLabel) fixedRegionLabel.textContent = '· 订阅月均汇总';
         const monthLabel = sharedModule.$('#standards-month-label');
         if (monthLabel) monthLabel.textContent = `${state.year}年${state.month}月`;
         standardsEditorModule.syncStandardsModeUI();

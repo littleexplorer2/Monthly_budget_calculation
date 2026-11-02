@@ -16,11 +16,11 @@
         state.monthStandardsSnapshot = false;
       }
 
-      /** 把旧版差异或已有快照合并到指定默认标准，供状态迁移/固化使用。 */
+      /** 把仍可编辑的每日/旅居差异合并到默认标准，供状态迁移/固化使用。 */
       function mergeStandardsInto(base, saved) {
         const out = sharedModule.deepClone(base);
         const incoming = saved && typeof saved === 'object' ? saved : {};
-        for (const cat of ['variable', 'fixed', 'travel']) {
+        for (const cat of ['variable', 'travel']) {
           for (const [group, values] of Object.entries(incoming[cat] || {})) {
             if (!out[cat][group]) out[cat][group] = {};
             for (const [curr, value] of Object.entries(values || {})) {
@@ -30,8 +30,6 @@
             }
           }
         }
-        out.extra = { ...(out.extra || {}) };
-        for (const [curr, value] of Object.entries(incoming.extra || {})) out.extra[curr] = Number(value);
         return out;
       }
 
@@ -42,9 +40,11 @@
         for (const loc of customs) {
           if (!locations.some((item) => item.key === loc.key)) locations.push(sharedModule.deepClone(loc));
         }
+        const merged = service.mergeStandardsInto(defaults, saved);
         return {
           _snapshot: true,
-          ...service.mergeStandardsInto(defaults, saved),
+          variable: merged.variable,
+          travel: merged.travel,
           custom_locations: customs,
           custom_currencies: sharedModule.deepClone(saved && saved.custom_currencies || {}),
           _locations: locations,
@@ -57,9 +57,7 @@
         return {
           _snapshot: true,
           variable: sharedModule.deepClone(state.standards.variable),
-          fixed: sharedModule.deepClone(state.standards.fixed),
           travel: sharedModule.deepClone(state.standards.travel),
-          extra: sharedModule.deepClone(state.standards.extra || {}),
           custom_locations: sharedModule.deepClone(state.customLocations || []),
           custom_currencies: sharedModule.deepClone(state.customCurrencies || {}),
           _locations: sharedModule.deepClone(locationsModule.allLocations()),
@@ -92,7 +90,11 @@
       function activeStandardsOverride() {
         // 计算请求必须携带用户刚刚确认的完整标准快照。只发送相对默认值的差异，
         // 会让另一标签页恰好保存的新默认值改变本页已经确认过的计算输入。
-        return service.currentStandardsSnapshot();
+        return {
+          ...service.currentStandardsSnapshot(),
+          fixed: sharedModule.deepClone(state.standards.fixed || {}),
+          extra: Object.fromEntries(sharedModule.EXTRA_CURRENCIES.map((currency) => [currency, 0])),
+        };
       }
 
       /** 读取 overrides 的月份映射表 { 'YYYY-MM': {variable,fixed,travel} } */
@@ -127,12 +129,6 @@
         const monthOv = map[monthlyModule.monthKey()];
         if (monthOv && typeof monthOv === 'object') {
           if (monthOv._snapshot) {
-            state.standards = sharedModule.deepClone({
-              variable: monthOv.variable || {},
-              fixed: monthOv.fixed || {},
-              travel: monthOv.travel || {},
-              extra: monthOv.extra || {},
-            });
             state.monthLocations = sharedModule.deepClone(monthOv._locations || []);
             state.monthLocationNames = sharedModule.deepClone(monthOv._location_names || {});
             state.monthCurrencyNames = sharedModule.deepClone(monthOv._currency_names || {});
@@ -196,18 +192,6 @@
           const v = pick(saved.variable, loc, curr);
           if (v !== null) state.standards.variable[loc][curr] = v;
         }
-        // 固定：默认币种 + 覆盖中新增的自定义币种
-        for (const reg of Object.keys(defs.fixed)) {
-          const savedReg = saved.fixed && saved.fixed[reg];
-          const currs = new Set([
-            ...Object.keys(defs.fixed[reg]),
-            ...(savedReg && typeof savedReg === 'object' ? Object.keys(savedReg) : []),
-          ]);
-          for (const curr of currs) {
-            const v = pick(saved.fixed, reg, curr);
-            if (v !== null) state.standards.fixed[reg][curr] = v;
-          }
-        }
         // 旅居：默认地点 + 自定义旅居地点
         const trLocs = new Set([
           ...Object.keys(defs.travel),
@@ -223,26 +207,14 @@
             }
           }
         }
-        // 额外预算：缺失则保持默认 0
         service.ensureExtraStandards();
-        const savedExtra = saved.extra;
-        if (savedExtra && typeof savedExtra === 'object') {
-          for (const curr of sharedModule.EXTRA_CURRENCIES) {
-            const v = num(savedExtra[curr]);
-            if (v !== null) state.standards.extra[curr] = v;
-          }
-        }
       }
 
-      /** 保证额外预算三项存在（默认 0），兼容旧存档没有 extra 的情况 */
+      /** 额外预算旧合同保持为显式零值，不能形成订阅以外的第二套金额来源。 */
       function ensureExtraStandards() {
-        const defs = (state.meta && state.meta.default_standards && state.meta.default_standards.extra) || {};
         if (!state.standards.extra || typeof state.standards.extra !== 'object') state.standards.extra = {};
         for (const curr of sharedModule.EXTRA_CURRENCIES) {
-          if (state.standards.extra[curr] == null) {
-            const n = Number(defs[curr]);
-            state.standards.extra[curr] = Number.isFinite(n) && n >= 0 ? n : 0;
-          }
+          state.standards.extra[curr] = 0;
         }
       }
 
