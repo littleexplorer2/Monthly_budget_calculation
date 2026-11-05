@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import math
 import re
@@ -167,7 +168,70 @@ def api_calculate(req: app_contracts.CalculateRequest):
         rates_dict=rates,
         resolved_standards=resolved_standards,
     )
+    # 底层行情只用于本次计算，不能进入 HTTP 响应或后续状态快照。
+    result.pop("rates_dict", None)
     result["warnings"] = warnings
     result["deduped_entries"] = dup_count
     result["rate_source"] = rate_source
     return result
+
+
+def api_calculate_stored_month(month: str, req: app_contracts.StoredMonthCalculateIn):
+    """以已落盘月份实体为唯一输入计算，并用同一 revision CAS 保存结果。"""
+    # 局部导入避免 state 与预算用例在模块装配阶段形成静态循环。
+    from application import state as app_state
+
+    document = app_state.load_month(month)
+    if document is None:
+        raise app_contracts.ResourceNotFoundError(f"月份 {month} 不存在，请先确认新增月份")
+    if document["revision"] != req.base_revision:
+        raise app_contracts.StateConflictError(
+            f"月份 {month} 已从修订 {req.base_revision} 更新为 {document['revision']}；请刷新后重算"
+        )
+
+    year, month_number = map(int, document["month"].split("-"))
+    entries = [
+        app_contracts.ItineraryEntryIn(location=location, ranges=ranges)
+        for location, ranges in document["itinerary"].items()
+        if ranges
+    ]
+    if not entries:
+        raise ValueError("行程为空，请先在「行程安排」中添加行程")
+
+    fixed = {
+        "Mainland": {currency: 0.0 for currency in ("CNY", "HKD", "USD")},
+        "Overseas": {currency: 0.0 for currency in ("CNY", "HKD", "USD")},
+    }
+    for item in document["subscriptions"]["items"]:
+        if not item["included"]:
+            continue
+        amount = float(item["amount"]) / (12 if item["cycle"] == "yearly" else 1)
+        for region in ("Mainland", "Overseas"):
+            if item["appliesTo"][region]:
+                fixed[region][item["currency"]] += amount
+
+    standards = copy.deepcopy(document["standards"])
+    standards["fixed"] = fixed
+    standards["extra"] = {"CNY": 0.0, "HKD": 0.0, "USD": 0.0}
+    options = document["options"]
+    calculate_request = app_contracts.CalculateRequest(
+        year=year,
+        month=month_number,
+        region=options["region"],
+        itinerary=entries,
+        standards_override=standards,
+        include_travel=options["includeTravel"],
+        travel_locations=options["travelSelected"],
+    )
+    result = api_calculate(calculate_request)
+    result.update({
+        "savedAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "region": options["region"],
+        "includeTravel": options["includeTravel"],
+        "budgetModel": "subscription-fixed-monthly-equivalent-v2",
+        "stale": False,
+    })
+    saved = app_state.save_month_result(
+        document["month"], result, base_revision=req.base_revision,
+    )
+    return {"result": saved["result"], "month": saved}

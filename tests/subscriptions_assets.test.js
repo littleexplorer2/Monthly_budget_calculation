@@ -2,9 +2,31 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createApp, defaultMetaFixture, defaultStateFixture } = require('./helpers/dom-stub.js');
+const { createApp, defaultMetaFixture } = require('./helpers/dom-stub.js');
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 旧聚合状态只作为测试输入交给夹具中的一次性 v1 -> v2 适配器；应用初始化后
+// 所有断言均读取正式的 monthsByKey/global v2 实体，避免把兼容结构带回生产运行时。
+function defaultStateFixture() {
+  return {
+    version: 1,
+    year: 2026,
+    month: 9,
+    itineraryByMonth: {},
+    optionsByMonth: {},
+    overridesByMonth: {},
+    resultsByMonth: {},
+    subscriptionsByMonth: {},
+    annualBudgetsByYear: {},
+    annualResultsByYear: {},
+    assetPortfoliosById: {},
+  };
+}
+
+function monthEntity(app, key = '2026-09') {
+  return app.state.monthsByKey[key];
+}
 
 function subscription(id, overrides = {}) {
   return {
@@ -49,8 +71,8 @@ test('勾选订阅按币种驱动固定预算，年付金额按十二个月平�
 
   assert.equal(app.state.standards.fixed.Mainland.HKD, 100);
   assert.equal(app.state.standards.fixed.Overseas.HKD, 100);
-  assert.equal(Object.hasOwn(app.state.overridesByMonth['2026-09'], 'fixed'), false);
-  assert.equal(Object.hasOwn(app.state.overridesByMonth['2026-09'], 'extra'), false);
+  assert.equal(Object.hasOwn(monthEntity(app).standards, 'fixed'), false);
+  assert.equal(Object.hasOwn(monthEntity(app).standards, 'extra'), false);
 });
 
 test('订阅名称与金额在输入时进入保存队列，不依赖失焦或 change 事件', async () => {
@@ -67,7 +89,7 @@ test('订阅名称与金额在输入时进入保存队列，不依赖失焦或 c
   name.dispatchEvent({ type: 'input', bubbles: true, target: name });
   assert.equal(doc.querySelector('[data-subscription-id="annual"] input[data-subscription-field="name"]'), name,
     '输入期间不能重建正在编辑的输入框');
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].name, '年度会员');
+  assert.equal(monthEntity(app).subscriptions.items[0].name, '年度会员');
 
   const amount = doc.querySelector('[data-subscription-id="annual"] input[data-subscription-field="amount"]');
   amount.value = '2400';
@@ -75,9 +97,9 @@ test('订阅名称与金额在输入时进入保存队列，不依赖失焦或 c
   assert.equal(app.state.standards.fixed.Mainland.HKD, 200);
 
   await wait(360);
-  const writes = requests.filter((request) => request.url === '/api/state' && request.method === 'PUT');
+  const writes = requests.filter((request) => request.url === '/api/months/2026-09' && request.method === 'PUT');
   assert.ok(writes.length > 0);
-  const saved = writes.at(-1).body.subscriptionsByMonth['2026-09'].items[0];
+  const saved = writes.at(-1).body.data.subscriptions.items[0];
   assert.equal(saved.name, '年度会员');
   assert.equal(saved.amount, 2400);
 });
@@ -98,9 +120,9 @@ test('新月份按计入默认继承订阅，但修改目标月不反写过去�
   };
   const { doc, app } = createApp({ meta, state });
   await app.init();
-  assert.equal(app.navigateToMonth(2026, 10), true);
+  assert.equal(await app.navigateToMonth(2026, 10), true);
 
-  const october = app.state.subscriptionsByMonth['2026-10'];
+  const october = monthEntity(app, '2026-10').subscriptions;
   assert.deepEqual(JSON.parse(JSON.stringify(october.items.map((item) => [item.id, item.included]))), [
     ['keep', true],
   ]);
@@ -110,10 +132,10 @@ test('新月份按计入默认继承订阅，但修改目标月不反写过去�
   keep.checked = false;
   keep.dispatchEvent({ type: 'change', bubbles: true, target: keep });
 
-  assert.equal(app.state.subscriptionsByMonth['2026-10'].items[0].included, false);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, false,
+  assert.equal(monthEntity(app, '2026-10').subscriptions.items[0].included, false);
+  assert.equal(monthEntity(app).subscriptions.items[0].included, false,
     '九月原快照应保持原来的未勾选值');
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[1].included, true,
+  assert.equal(monthEntity(app).subscriptions.items[1].included, true,
     '修改十月不能改变九月的其它项目');
 });
 
@@ -144,11 +166,11 @@ test('首次启用默认订阅目录时把旧月份项目迁入弹窗草稿', as
   assert.equal(app.state.defaultsDraft.subscriptions.length, 2,
     '隐藏的非默认项目仍留在草稿中，保存时不会误改历史快照');
 
-  assert.equal(app.navigateToMonth(2026, 10), true);
-  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].items.map((item) => (
+  assert.equal(await app.navigateToMonth(2026, 10), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(monthEntity(app, '2026-10').subscriptions.items.map((item) => (
     [item.id, item.included]
   )))), [['keep', true]], '未计入默认的项目应从新月份消失');
-  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].retiredIds)), ['skip']);
+  assert.deepEqual(JSON.parse(JSON.stringify(monthEntity(app, '2026-10').subscriptions.retiredIds)), ['skip']);
 });
 
 test('本月条目把计入默认与计入当月预算拆开，两个状态互不代替', async () => {
@@ -179,8 +201,8 @@ test('本月条目把计入默认与计入当月预算拆开，两个状态互�
 
   included.checked = true;
   included.dispatchEvent({ type: 'change', bubbles: true, target: included });
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].includeByDefault, false,
+  assert.equal(monthEntity(app).subscriptions.items[0].included, true);
+  assert.equal(monthEntity(app).subscriptions.items[0].includeByDefault, false,
     '计入当月预算不得改写下月默认状态');
 
   const rerenderedDefault = doc.querySelector(
@@ -188,8 +210,8 @@ test('本月条目把计入默认与计入当月预算拆开，两个状态互�
   );
   rerenderedDefault.checked = true;
   rerenderedDefault.dispatchEvent({ type: 'change', bubbles: true, target: rerenderedDefault });
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].includeByDefault, true,
+  assert.equal(monthEntity(app).subscriptions.items[0].included, true);
+  assert.equal(monthEntity(app).subscriptions.items[0].includeByDefault, true,
     '计入默认不得取消当前月预算勾选');
 
   doc.querySelector('#btn-defaults-modal').click();
@@ -205,16 +227,16 @@ test('本月条目把计入默认与计入当月预算拆开，两个状态互�
   const addSettlement = defaultsBudget.querySelector('[data-action="add-std"][data-cat="variable"]');
   assert.ok(addSettlement.closest('.defaults-section-head'), '新建定居地点按钮应与主标题位于同一行');
 
-  assert.equal(app.navigateToMonth(2026, 10), true);
-  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].items.map((item) => (
+  assert.equal(await app.navigateToMonth(2026, 10), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(monthEntity(app, '2026-10').subscriptions.items.map((item) => (
     [item.id, item.name, item.amount, item.included]
   )))), [
     ['keep', '保留项目', 20, true],
   ]);
-  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].retiredIds)), ['skip']);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true,
+  assert.deepEqual(JSON.parse(JSON.stringify(monthEntity(app, '2026-10').subscriptions.retiredIds)), ['skip']);
+  assert.equal(monthEntity(app).subscriptions.items[0].included, true,
     '创建十月不能回写九月已经单独勾选的当月状态');
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].amount, 10,
+  assert.equal(monthEntity(app).subscriptions.items[0].amount, 10,
     '九月单独金额必须保留，十月应重新使用默认目录中的 20');
 });
 
@@ -246,22 +268,42 @@ test('永久取消只清理后续月份并用墓碑阻止默认目录重新加�
   checkbox.checked = false;
   checkbox.dispatchEvent({ type: 'change', bubbles: true, target: checkbox });
 
-  assert.equal(app.state.subscriptionsByMonth['2026-08'].items[0].amount, 8);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].amount, 9);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].includeByDefault, false);
+  assert.equal(monthEntity(app, '2026-08').subscriptions.items[0].amount, 8);
+  assert.equal(monthEntity(app).subscriptions.items[0].amount, 9);
+  assert.equal(monthEntity(app).subscriptions.items[0].includeByDefault, false);
   for (const month of ['2026-10', '2026-11']) {
-    assert.equal(app.state.subscriptionsByMonth[month].items.length, 0, `${month} 不应再保留已取消项目`);
-    assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth[month].retiredIds)), ['cancelled']);
+    assert.equal(monthEntity(app, month).subscriptions.items.length, 0, `${month} 不应再保留已取消项目`);
+    assert.deepEqual(JSON.parse(JSON.stringify(monthEntity(app, month).subscriptions.retiredIds)), ['cancelled']);
   }
 
-  assert.equal(app.navigateToMonth(2026, 12), true);
-  assert.equal(app.state.subscriptionsByMonth['2026-12'].items.length, 0,
+  assert.equal(await app.navigateToMonth(2026, 12), true);
+  assert.equal(monthEntity(app, '2026-12').subscriptions.items.length, 0,
     '默认目录仍有同 ID 项目时，取消墓碑也必须阻止十二月重新加入');
-  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-12'].retiredIds)), ['cancelled']);
+  assert.deepEqual(JSON.parse(JSON.stringify(monthEntity(app, '2026-12').subscriptions.retiredIds)), ['cancelled']);
 
   doc.querySelector('#btn-defaults-modal').click();
   assert.equal(doc.querySelector('[data-default-subscription-id="cancelled"]'), null,
     '永久取消的项目不应再显示在默认预算标准中');
+});
+
+test('已从默认目录移除的幽灵订阅不会继续传播到新月份', async () => {
+  const meta = defaultMetaFixture();
+  meta.default_subscriptions_configured = true;
+  meta.default_subscriptions = [
+    { id: 'active', name: '当前目录项目', currency: 'CNY', cycle: 'monthly', amount: 10, includeByDefault: true },
+  ];
+  const state = defaultStateFixture();
+  state.subscriptionsByMonth['2026-09'] = {
+    items: [subscription('ghost', { name: '已删除目录项目', includeByDefault: true })],
+    retiredIds: [],
+  };
+  const { app } = createApp({ meta, state });
+  await app.init();
+
+  assert.equal(await app.navigateToMonth(2026, 10), true);
+  const october = monthEntity(app, '2026-10').subscriptions;
+  assert.deepEqual(JSON.parse(JSON.stringify(october.items.map((item) => item.id))), ['active']);
+  assert.deepEqual(JSON.parse(JSON.stringify(october.retiredIds)), ['ghost']);
 });
 
 test('三种币种各自新增本月订阅，卡片内不提供改币种下拉框', async () => {
@@ -277,7 +319,7 @@ test('三种币种各自新增本月订阅，卡片内不提供改币种下拉�
     '[data-subscription-currency="HKD"] [data-action="add-subscription"]',
   );
   hkdButton.click();
-  const snapshot = app.state.subscriptionsByMonth['2026-09'];
+  const snapshot = monthEntity(app).subscriptions;
   assert.equal(snapshot.items.length, 1);
   assert.equal(snapshot.items[0].currency, 'HKD');
   const row = doc.querySelector(`[data-subscription-id="${snapshot.items[0].id}"]`);
@@ -322,7 +364,7 @@ test('订阅地点下拉独立控制内地与海外显示和固定预算汇总',
   overseasToggle.checked = false;
   overseasToggle.dispatchEvent({ type: 'change', bubbles: true, target: overseasToggle });
   assert.deepEqual(
-    JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-09'].items[2].appliesTo)),
+    JSON.parse(JSON.stringify(monthEntity(app).subscriptions.items[2].appliesTo)),
     { Mainland: true, Overseas: false },
   );
   assert.equal(app.state.standards.fixed.Overseas.CNY, 20);
@@ -351,7 +393,7 @@ test('订阅地点至少保留一个，避免卡片在两个预算区域都不�
   toggle.dispatchEvent({ type: 'change', bubbles: true, target: toggle });
   assert.equal(toggle.checked, true);
   assert.deepEqual(
-    JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-09'].items[0].appliesTo)),
+    JSON.parse(JSON.stringify(monthEntity(app).subscriptions.items[0].appliesTo)),
     { Mainland: true, Overseas: false },
   );
 });
@@ -404,13 +446,13 @@ test('删除一个月份后再次确认创建，可重新按最近过去月份�
   await app.init();
 
   await app.deleteMonthData('2026-10');
-  assert.equal(Object.hasOwn(app.state.subscriptionsByMonth, '2026-10'), false);
-  assert.equal(app.navigateToMonth(2026, 10), true);
-  assert.equal(app.state.subscriptionsByMonth['2026-10'].items[0].included, true);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true);
+  assert.equal(Object.hasOwn(app.state.monthsByKey, '2026-10'), false);
+  assert.equal(await app.navigateToMonth(2026, 10), true);
+  assert.equal(monthEntity(app, '2026-10').subscriptions.items[0].included, true);
+  assert.equal(monthEntity(app).subscriptions.items[0].included, true);
 });
 
-test('资产条目使用最近一年均值生成总额、现金率、存款率，并只写资产状态域', async () => {
+test('资产条目使用最近一年均值生成总额、现金率、存款率，并只写全局实体', async () => {
   const { doc, app, requests } = createApp();
   await app.init();
   await app.loadAssetRates();
@@ -466,15 +508,14 @@ test('资产条目使用最近一年均值生成总额、现金率、存款率�
   assert.match(doc.querySelector('#asset-base-note').textContent, /18,120\.00/);
 
   await wait(360);
-  const writes = requests.filter((request) => request.url === '/api/state' && request.method === 'PUT');
+  const writes = requests.filter((request) => request.url === '/api/global' && request.method === 'PUT');
   assert.ok(writes.length > 0);
-  const payload = writes.at(-1).body;
+  const payload = writes.at(-1).body.data;
   assert.ok(payload.assetPortfoliosById.current);
   assert.deepEqual(JSON.parse(JSON.stringify(payload.assetPortfoliosById.current.calculationBase)), {
     CNY: 10000, HKD: 1000, USD: 1000,
   });
-  for (const field of ['year', 'month', 'overridesByMonth', 'subscriptionsByMonth',
-    'annualBudgetsByYear', 'annualResultsByYear']) {
+  for (const field of ['year', 'month', 'itinerary', 'options', 'standards', 'subscriptions', 'result']) {
     assert.equal(Object.hasOwn(payload, field), false, `资产编辑不应夹带 ${field}`);
   }
 });

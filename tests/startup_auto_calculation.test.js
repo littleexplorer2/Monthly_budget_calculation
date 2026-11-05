@@ -2,13 +2,13 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createApp, defaultStateFixture } = require('./helpers/dom-stub.js');
+const { createApp } = require('./helpers/dom-stub.js');
 
 function currentMonthState() {
   const now = new Date();
   const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   return {
-    ...defaultStateFixture(),
+    version: 1,
     year: now.getFullYear(),
     month: now.getMonth() + 1,
     itineraryByMonth: {
@@ -20,6 +20,11 @@ function currentMonthState() {
     annualBudgetsByYear: {
       [String(now.getFullYear())]: { CNY: 1000, HKD: 200, USD: 300, THB: 999 },
     },
+    overridesByMonth: {},
+    resultsByMonth: {},
+    subscriptionsByMonth: {},
+    annualResultsByYear: {},
+    assetPortfoliosById: {},
   };
 }
 
@@ -69,7 +74,7 @@ test('启动时自动更新年度与有行程的月度预算，且不要求确�
   await app.init();
 
   const annual = requests.find((item) => item.url === '/api/annual-budget');
-  const monthly = requests.find((item) => item.url === '/api/calculate');
+  const monthly = requests.find((item) => item.url === `/api/months/${year}-${month}/calculate`);
   assert.ok(requests.some((item) => item.url.startsWith('/api/annual-rates?')));
   assert.ok(annual, '启动时应自动计算全年预算');
   assert.deepEqual(Object.keys(annual.body.amounts).sort(), ['CNY', 'HKD', 'USD']);
@@ -111,21 +116,23 @@ test('各月比较不再渲染独立表格，完整月份数据只在折线图�
 test('启动时没有行程的空月份不会被自动计算或静默创建', async () => {
   const now = new Date();
   const state = {
-    ...defaultStateFixture(),
+    version: 1,
     year: now.getFullYear(),
     month: now.getMonth() + 1,
     itineraryByMonth: {},
     optionsByMonth: {},
     overridesByMonth: {},
     resultsByMonth: {},
+    subscriptionsByMonth: {},
+    annualBudgetsByYear: {},
+    annualResultsByYear: {},
+    assetPortfoliosById: {},
   };
   const { app, requests } = createApp({ autoCalculations: true, state });
 
   await app.init();
 
-  assert.equal(requests.some((item) => item.url === '/api/calculate'), false);
-  assert.equal(Object.keys(app.state.itineraryByMonth).length, 0);
-  assert.equal(Object.keys(app.state.optionsByMonth).length, 0);
-  assert.equal(Object.keys(app.state.overridesByMonth).length, 0);
-  assert.equal(Object.keys(app.state.resultsByMonth).length, 0);
+  assert.equal(requests.some((item) => /\/api\/months\/[^/]+\/calculate$/.test(item.url)), false);
+  assert.equal(Object.keys(app.state.monthsByKey).length, 0);
+  assert.equal(requests.some((item) => /\/api\/months\/[^/]+\/ensure$/.test(item.url)), false);
 });

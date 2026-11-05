@@ -20,13 +20,12 @@
 
       function collectAnalysisMonths() {
         const results = resultsModule.loadResultsMap();
-        const options = state.optionsByMonth || {};
         return Object.keys(results).sort().map((key) => {
           const r = results[key];
           if (r && r.stale) return null;
           const total = r && r.summary ? Number(r.summary['总预算(人民币)']) : NaN;
           if (!Number.isFinite(total)) return null;
-          const opt = options[key] || {};
+          const opt = (state.monthsByKey[key] && state.monthsByKey[key].options) || {};
           const regionRaw = r.region || opt.region || (r.summary && r.summary['居住区域']) || 'Mainland';
           const region = regionRaw === 'Overseas' ? 'Overseas' : 'Mainland';
           let includeTravel;

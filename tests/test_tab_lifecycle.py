@@ -8,6 +8,9 @@ from unittest import mock
 
 
 class TabLeaseTests(unittest.TestCase):
+    def test_background_throttling_has_a_five_minute_lease_budget(self):
+        self.assertGreaterEqual(lifecycle_service._TAB_LEASE_SECONDS, 300.0)
+
     def test_register_and_heartbeat_refresh_the_tab_lease(self):
         tabs = {}
         body = contracts_service.TabRegisterIn(tab_id="safari-tab")
@@ -52,6 +55,40 @@ class TabLeaseTests(unittest.TestCase):
 
         self.assertIn("active-tab", tabs)
         schedule.assert_called_once_with()
+        arm_shutdown.assert_not_called()
+
+    def test_oversized_final_state_unregisters_tab_but_keeps_server_running(self):
+        tabs = {"large-tab": 10.0}
+        body = contracts_service.TabRegisterIn(tab_id="large-tab", state_omitted=True)
+        with (
+            mock.patch.object(lifecycle_service, "_open_tabs", tabs),
+            mock.patch.object(lifecycle_service, "AUTO_SHUTDOWN_ENABLED", True),
+            mock.patch.object(lifecycle_service, "_cancel_tab_expiry_timer_locked"),
+            mock.patch.object(lifecycle_service, "_arm_shutdown_timer") as arm_shutdown,
+        ):
+            with self.assertRaisesRegex(contracts_service.StateSaveError, "服务将保持运行"):
+                lifecycle_service.api_tabs_unregister(body)
+        self.assertEqual(tabs, {})
+        arm_shutdown.assert_not_called()
+
+    def test_conflicting_final_entity_is_not_reported_as_saved_or_allowed_to_shutdown(self):
+        tabs = {"conflict-tab": 10.0}
+        body = contracts_service.TabRegisterIn(
+            tab_id="conflict-tab", state={"schemaVersion": 2, "months": []},
+        )
+        with (
+            mock.patch.object(lifecycle_service, "_open_tabs", tabs),
+            mock.patch.object(lifecycle_service, "AUTO_SHUTDOWN_ENABLED", True),
+            mock.patch.object(lifecycle_service, "_cancel_tab_expiry_timer_locked"),
+            mock.patch.object(lifecycle_service, "_arm_shutdown_timer") as arm_shutdown,
+            mock.patch.object(
+                lifecycle_service.app_state, "save_final_bundle",
+                return_value={"saved": [], "conflicts": ["2026-09"]},
+            ),
+        ):
+            with self.assertRaisesRegex(contracts_service.StateSaveError, "服务将保持运行"):
+                lifecycle_service.api_tabs_unregister(body)
+        self.assertEqual(tabs, {})
         arm_shutdown.assert_not_called()
 
 

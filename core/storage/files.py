@@ -3,34 +3,58 @@
 import json
 import os
 from pathlib import Path
+import secrets
+
+
+def _fsync_directory(path: Path) -> None:
+    """尽力同步目录项；Windows 不支持目录句柄时保持文件级保证。"""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    try:
+        fd = os.open(str(path), flags)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 def atomic_write_text(path: Path, text: str) -> None:
     """跨平台原子写文本（UTF-8）。
 
-    先写同目录临时文件并 fsync，再 os.replace。macOS / iCloud / OneDrive 上
-    replace 偶发失败时回退为直接覆盖，避免读到半截文件。
+    先把完整内容写入同目录唯一临时文件并 fsync，再用 os.replace 发布。
+    replace 失败时保留原文件并把错误交给调用方；不得回退为非原子覆盖。
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(16)}.tmp")
     payload = text.encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_BINARY"):
         flags |= os.O_BINARY
     fd = os.open(str(tmp), flags, 0o644)
     try:
-        os.write(fd, payload)
+        remaining = memoryview(payload)
+        while remaining:
+            written = os.write(fd, remaining)
+            if written <= 0:
+                raise OSError("临时文件写入未取得进展")
+            remaining = remaining[written:]
         os.fsync(fd)
     finally:
         os.close(fd)
     try:
         os.replace(str(tmp), str(path))
-    except OSError:
-        path.write_bytes(payload)
+        _fsync_directory(path.parent)
+    except Exception:
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
+        raise
 
 
 def read_json_file(path: Path, *, strict: bool = False) -> dict | None:

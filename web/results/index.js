@@ -9,21 +9,27 @@
       const { state } = stateModule;
       const BUDGET_MODEL = 'subscription-fixed-monthly-equivalent-v2';
 
-      /** 每月计算结果存储：{ 'YYYY-MM': {summary, daily_details, fixed_details, extra_details, warnings, savedAt} } */
+      /** 从 v2 月份实体派生只读结果索引，供分析页消费。 */
       function loadResultsMap() {
-        return state.resultsByMonth && typeof state.resultsByMonth === 'object'
-          ? state.resultsByMonth
-          : {};
+        return Object.fromEntries(Object.entries(state.monthsByKey || {})
+          .filter(([, entity]) => entity && entity.result)
+          .map(([key, entity]) => [key, entity.result]));
       }
 
       function writeResultsMap(map, mode = 'debounce') {
-        state.resultsByMonth = persistenceModule.compactResultsMap(map);
+        const values = persistenceModule.compactResultsMap(map);
+        for (const [key, entity] of Object.entries(state.monthsByKey || {})) {
+          const next = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+          if (persistenceModule.sameValue(entity.result, next)) continue;
+          entity.result = next;
+          persistenceModule.markMonthDirty('result', key);
+        }
         return persistenceModule.persist(mode);
       }
 
       function saveResult(result, mode = 'debounce', context = {}) {
-        const map = service.loadResultsMap();
         const targetMonth = context.monthKey || monthlyModule.monthKey();
+        const entity = persistenceModule.ensureLocalMonthDraft(targetMonth);
         const resultRegion = context.region == null ? state.region : context.region;
         const saved = Object.assign({}, persistenceModule.compactResult(result), {
           savedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
@@ -31,22 +37,29 @@
           includeTravel: context.includeTravel == null
             ? !!state.includeTravel : !!context.includeTravel,
           budgetModel: BUDGET_MODEL,
-          stale: false,
+          stale: context.stale === true,
         });
-        map[targetMonth] = saved;
+        if (saved.stale && context.staleReason) {
+          saved.staleReason = context.staleReason;
+          saved.staleAt = new Date().toISOString();
+        }
+        entity.result = saved;
+        persistenceModule.markMonthDirty('result', targetMonth);
         if (targetMonth === monthlyModule.monthKey()) state.calcResult = saved;
-        return service.writeResultsMap(map, mode);
+        return persistenceModule.persist(mode);
       }
 
       /** 预算输入变化后保留旧结果供追溯，但明确标为过期，避免分析页误用。 */
       function markCurrentResultStale(reason = '预算标准、行程或计算选项已更改') {
-        const map = service.loadResultsMap();
-        const result = map[monthlyModule.monthKey()];
-        if (!result || typeof result !== 'object' || !result.summary) return;
+        const entity = state.monthsByKey[monthlyModule.monthKey()];
+        const result = entity && entity.result;
+        if (!result || typeof result !== 'object' || !result.summary) return false;
+        if (result.stale) return false;
         result.stale = true;
         result.staleReason = reason;
         result.staleAt = new Date().toISOString();
         if (state.calcResult) state.calcResult = result;
+        return true;
       }
 
       function loadResultForMonth(key) {

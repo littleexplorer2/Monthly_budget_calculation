@@ -44,6 +44,9 @@ def normalize_defaults_payload(payload: dict, *, default_extra: dict) -> dict:
     extra_in = payload.get("extra") or {}
     if not isinstance(extra_in, dict):
         raise ValueError("额外预算必须是对象")
+    unknown_extra = set(extra_in) - {"CNY", "USD", "HKD"}
+    if unknown_extra:
+        raise ValueError(f"额外预算包含未知币种：{', '.join(sorted(map(str, unknown_extra)))}")
     extra = {}
     for curr in ("CNY", "USD", "HKD"):
         amount = extra_in[curr] if curr in extra_in else default_extra.get(curr, 0)

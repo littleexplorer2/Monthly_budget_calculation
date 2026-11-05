@@ -17,12 +17,12 @@
 
       /* --------------------------------------------------------------------------
        * 「服务器默认预算标准」独立区域
-       * - 当月预算面板的输入只改 state.standards（写入 app-state.json 的当月覆盖）；
+       * - 当月预算面板的输入只改当前 v2 月份实体的 standards；
        * - 默认标准面板的输入只改 state.defaultsDraft，由「保存默认标准」写入
        *   data/defaults.json（影响之后的新月份），保存不改动当月数值。
        * ------------------------------------------------------------------------ */
 
-      /** 进入「默认标准」编辑：以服务器默认标准为草稿，并入当月新建的地点/币种 */
+      /** 进入「默认标准」编辑：只复制服务器默认值；月内临时项目不得被隐式提升。 */
       function beginDefaultsDraft() {
         const draft = sharedModule.deepClone(state.meta.default_standards || { variable: {}, fixed: {}, travel: {}, extra: {} });
         draft.variable = draft.variable || {};
@@ -33,34 +33,6 @@
         const draftLocNames = { ...((state.meta && state.meta.location_names) || {}) };
         const draftCurrNames = { ...((state.meta && state.meta.currency_names) || {}) };
 
-        for (const c of state.customLocations || []) {
-          if (c.category === 'variable') {
-            const st = state.standards.variable[c.key];
-            if (st && st[c.currency] != null && !draft.variable[c.key]) draft.variable[c.key] = { [c.currency]: st[c.currency] };
-            if (!draftLocs.some((l) => l.key === c.key)) {
-              draftLocs.push({ key: c.key, name: c.name, category: 'variable', currency: c.currency });
-            }
-          } else if (c.category === 'travel') {
-            const st = state.standards.travel[c.key];
-            if (st && st[c.currency] && !draft.travel[c.key]) {
-              draft.travel[c.key] = { [c.currency]: { daily: st[c.currency].daily, once: st[c.currency].once } };
-            }
-            if (!draftLocs.some((l) => l.key === c.key)) {
-              draftLocs.push({ key: c.key, name: c.name, category: 'travel', currency: c.currency });
-            }
-          }
-          draftLocNames[c.key] = c.name;
-        }
-        // 当月新增的固定预算币种：并入草稿（该币种属于当时选中的区域）
-        for (const [curr, name] of Object.entries(state.customCurrencies || {})) {
-          draftCurrNames[curr] = name;
-          const region = state.region === 'Overseas' ? 'Overseas' : 'Mainland';
-          const st = state.standards.fixed[region] && state.standards.fixed[region][curr];
-          if (st != null) {
-            if (!draft.fixed[region]) draft.fixed[region] = {};
-            if (draft.fixed[region][curr] == null) draft.fixed[region][curr] = st;
-          }
-        }
         state.defaultsDraft = {
           standards: draft, locations: draftLocs,
           locationNames: draftLocNames, currencyNames: draftCurrNames,
@@ -179,7 +151,7 @@
         return service.diffChipHtml(cat, loc, curr, field, draftGroup, (saved[cat] || {})[loc] || {}, 'to-defaults');
       }
 
-      /** 当月预算：只改本月（写入 app-state.json 的当月覆盖），不影响默认标准 */
+      /** 当月预算：只改本月实体的完整标准快照，不影响默认标准 */
       function applyMonthInput(cat, loc, curr, field, value) {
         if (cat === 'extra') {
           standardsModule.ensureExtraStandards();
@@ -587,8 +559,7 @@
         const diffs = service.countDefaultsDiffs();
         if (!diffs) { feedbackModule.toast('默认标准没有改动', 'info'); return; }
         if (!confirm(`将把默认预算与订阅配置写入服务器 data/defaults.json（共 ${diffs} 处改动）。`
-          + '之后的新月份会使用这套预算与订阅默认值；已保存的其它月份会固化为完整快照，'
-          + '当前月份的预算不会被改动。是否继续？')) return;
+          + '之后的新月份会使用这套默认值；既有月份已各自持有完整快照，不会被改动。是否继续？')) return;
         const defaultsPayload = sharedModule.deepClone({
           base_revision: state.meta.defaults_revision,
           variable: draft.variable,
@@ -603,12 +574,6 @@
         service.syncStandardsModeUI();
         feedbackModule.setLoading(true, '正在保存默认配置…');
         try {
-          standardsModule.preserveExistingMonthsBeforeDefaultChange();
-          const snapshotsSaved = await persistenceModule.persist('now');
-          if (!snapshotsSaved) {
-            feedbackModule.toast('当前及历史月份快照保存失败，已取消修改服务器默认标准', 'error');
-            return;
-          }
           const meta = await apiModule.api('/api/defaults', {
             method: 'POST',
             body: defaultsPayload,
@@ -616,7 +581,29 @@
           service.refreshDefaultsAfterServerChange(meta);
           feedbackModule.toast('已保存默认预算与订阅配置（当月预算保持不变）', 'success');
         } catch (err) {
-          feedbackModule.toast(err.message, 'error');
+          let latestMeta = null;
+          try { latestMeta = await apiModule.api('/api/meta', { timeout: 15000 }); }
+          catch (_) { /* 响应不确定时不能猜测服务器是否已应用 */ }
+          if (latestMeta && latestMeta.defaults_revision !== defaultsPayload.base_revision) {
+            const matchesDraft = service.countStandardsDiffs(
+              draft, latestMeta.default_standards,
+            ) === 0 && subscriptionsModule.defaultDiffCount(
+              state.defaultsDraft.subscriptions,
+              latestMeta.default_subscriptions || [],
+            ) === 0;
+            if (matchesDraft) {
+              service.refreshDefaultsAfterServerChange(latestMeta);
+              feedbackModule.toast('服务器已保存默认配置；已核对最新版本', 'success');
+            } else {
+              // 另一标签页已推进 revision。保留本页草稿，刷新基线后
+              // 下一次点击保存会使用新 revision，不会永久重复 409。
+              state.meta = latestMeta;
+              standardsViewModule.renderStandards();
+              feedbackModule.toast('默认配置已被另一标签页修改；已刷新版本基线，本页草稿仍保留，请核对后再次保存', 'warn');
+            }
+          } else {
+            feedbackModule.toast(err.message, 'error');
+          }
         } finally {
           runtime.defaultsSaveInFlight = false;
           feedbackModule.setLoading(false);
@@ -647,11 +634,6 @@
           + '当前月份的预算数值不会被改动（如需按出厂值重算，请点「恢复默认」）。是否继续？')) return;
         feedbackModule.setLoading(true, '正在恢复出厂默认…');
         try {
-          standardsModule.preserveExistingMonthsBeforeDefaultChange();
-          const snapshotsSaved = await persistenceModule.persist('now');
-          if (!snapshotsSaved) {
-            throw new Error('当前及历史月份快照保存失败，已取消恢复出厂默认');
-          }
           const meta = await apiModule.api('/api/defaults/reset', {
             method: 'POST',
             body: { base_revision: state.meta.defaults_revision },

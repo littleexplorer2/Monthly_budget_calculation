@@ -111,9 +111,9 @@ test('全年金额输入不重建节点、不丢焦点，并使旧结果失效',
 
   await sleep(350);
   const stateWrite = [...requests].reverse()
-    .find((item) => item.url === '/api/state' && item.method === 'PUT');
+    .find((item) => item.url === '/api/global' && item.method === 'PUT');
   assert.ok(stateWrite, '输入变更应触发统一状态 PUT');
-  assert.equal(stateWrite.body.annualResultsByYear[String(year)].stale, true,
+  assert.equal(stateWrite.body.data.annualResultsByYear[String(year)].stale, true,
     '过期标记必须进入统一状态 PUT，而不是发送无法表达删除的空映射');
   const roundTrip = JSON.parse(JSON.stringify(app.snapshotBundle()));
   app.applyBundle(roundTrip);
@@ -177,18 +177,17 @@ test('POST 计算后渲染总额，并通过唯一 state PUT 保存紧凑年度�
   assert.equal('series' in app.state.annualResultsByYear[String(year)], false, '原始行情不得进状态');
   assert.equal('rates' in app.state.annualResultsByYear[String(year)], false, '原始汇率不得进状态');
 
-  const stateWrites = requests.filter((item) => item.url === '/api/state' && item.method === 'PUT');
+  const stateWrites = requests.filter((item) => item.url === '/api/global' && item.method === 'PUT');
   assert.equal(stateWrites.length, 1, '显式计算应只产生一次最终状态 PUT');
-  const saved = stateWrites[0].body;
+  const saved = stateWrites[0].body.data;
   assert.equal(saved.annualBudgetsByYear[String(year)].USD, 1000);
   assert.equal(saved.annualResultsByYear[String(year)].summary['全年预算合计(人民币)'], 8123.46);
   assert.equal('series' in saved.annualResultsByYear[String(year)], false);
   assert.equal('rates' in saved.annualResultsByYear[String(year)], false);
-  for (const field of ['year', 'month', 'itineraryByMonth', 'optionsByMonth',
-    'overridesByMonth', 'resultsByMonth']) {
+  for (const field of ['itinerary', 'options', 'standards', 'subscriptions', 'result']) {
     assert.equal(field in saved, false, `纯年度保存不应夹带月度字段 ${field}`);
   }
-  assert.deepEqual(JSON.parse(JSON.stringify(app.snapshotBundle().annualBudgetsByYear[String(year)])), saved.annualBudgetsByYear[String(year)]);
+  assert.deepEqual(JSON.parse(JSON.stringify(app.snapshotBundle().global.annualBudgetsByYear[String(year)])), saved.annualBudgetsByYear[String(year)]);
 });
 
 test('切换年份时会发起新行情请求，且在途的旧年响应不得覆盖新年', async () => {
@@ -266,11 +265,11 @@ test('已计算总额始终显示计算快照汇率，手动刷新后结果会�
 
   await sleep(350);
   const stateWrite = [...requests].reverse()
-    .find((item) => item.url === '/api/state' && item.method === 'PUT');
+    .find((item) => item.url === '/api/global' && item.method === 'PUT');
   assert.ok(stateWrite);
-  assert.equal(stateWrite.body.annualResultsByYear[String(year)].stale, true);
+  assert.equal(stateWrite.body.data.annualResultsByYear[String(year)].stale, true);
   assert.match(
-    stateWrite.body.annualResultsByYear[String(year)].staleReason,
+    stateWrite.body.data.annualResultsByYear[String(year)].staleReason,
     /手动刷新/,
   );
 });
@@ -322,7 +321,7 @@ test('全年汇率强制刷新不完整时保留已有有效总额', async () =>
   assert.equal(doc.querySelector('#annual-budget-total').textContent, '¥ 700.00');
   assert.match(doc.querySelector('#toast').textContent, /刷新不完整/);
   assert.equal(
-    requests.filter((item) => item.url === '/api/state' && item.method === 'PUT').length,
+    requests.filter((item) => item.url === '/api/global' && item.method === 'PUT').length,
     0,
     '失败的刷新不应把有效年度结果持久化为过期',
   );

@@ -1,0 +1,295 @@
+{
+  "schemaVersion": 2,
+  "month": "2026-08",
+  "createdAt": "2026-11-05T11:04:14Z",
+  "createdFrom": {
+    "kind": "migrated-v1",
+    "defaultsRevision": "c4cb68362673a6dc7286f159502d502234264d016dac9b230076eca53bd8748c"
+  },
+  "revision": 1,
+  "updatedAt": "2026-11-05T11:04:14Z",
+  "itinerary": {
+    "Chengdu": [
+      {
+        "start": "2026-08-01",
+        "end": "2026-08-31"
+      }
+    ]
+  },
+  "options": {
+    "region": "Mainland",
+    "includeTravel": false,
+    "travelSelected": null,
+    "savedAt": "2026-09-06T14:25:31Z"
+  },
+  "standards": {
+    "_snapshot": true,
+    "variable": {
+      "Shenzhen": {
+        "CNY": 80.0
+      },
+      "Hong_Kong": {
+        "HKD": 150.0
+      },
+      "Chengdu": {
+        "CNY": 30.0
+      }
+    },
+    "travel": {
+      "Shanghai": {
+        "CNY": {
+          "daily": 175.0,
+          "once": 200.0
+        }
+      },
+      "Taipei": {
+        "TWD": {
+          "daily": 1450.0,
+          "once": 1000.0
+        }
+      },
+      "Bangkok": {
+        "THB": {
+          "daily": 1100.0,
+          "once": 2000.0
+        }
+      }
+    },
+    "custom_locations": [],
+    "custom_currencies": {},
+    "_locations": [
+      {
+        "key": "Shenzhen",
+        "name": "深圳",
+        "category": "variable",
+        "currency": "CNY",
+        "currency_name": "人民币"
+      },
+      {
+        "key": "Hong_Kong",
+        "name": "香港",
+        "category": "variable",
+        "currency": "HKD",
+        "currency_name": "港币"
+      },
+      {
+        "key": "Chengdu",
+        "name": "成都",
+        "category": "variable",
+        "currency": "CNY",
+        "currency_name": "人民币"
+      },
+      {
+        "key": "Shanghai",
+        "name": "上海",
+        "category": "travel",
+        "currency": "CNY",
+        "currency_name": "人民币"
+      },
+      {
+        "key": "Taipei",
+        "name": "台北",
+        "category": "travel",
+        "currency": "TWD",
+        "currency_name": "新台币"
+      },
+      {
+        "key": "Bangkok",
+        "name": "曼谷",
+        "category": "travel",
+        "currency": "THB",
+        "currency_name": "泰铢"
+      }
+    ],
+    "_location_names": {
+      "Extra": "额外预算",
+      "Shenzhen": "深圳",
+      "Hong_Kong": "香港",
+      "Chengdu": "成都",
+      "Shanghai": "上海",
+      "Taipei": "台北",
+      "Bangkok": "曼谷"
+    },
+    "_currency_names": {
+      "CNY": "人民币",
+      "CNH": "离岸人民币",
+      "HKD": "港币",
+      "USD": "美元",
+      "TWD": "新台币",
+      "THB": "泰铢"
+    }
+  },
+  "subscriptions": {
+    "items": [
+      {
+        "id": "sub-f82e6c2f-788b-426d-906e-1798e479d8f9",
+        "name": "联通话费",
+        "currency": "CNY",
+        "cycle": "monthly",
+        "amount": 29.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": true
+        }
+      },
+      {
+        "id": "sub-7b53cc4d-7bc2-43e7-98fd-6f3c2898056c",
+        "name": "香港每月话费",
+        "currency": "HKD",
+        "cycle": "monthly",
+        "amount": 42.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": true
+        }
+      },
+      {
+        "id": "sub-0e88e6aa-bf99-4343-b652-499a01c8acd2",
+        "name": "PIA VPN 订阅",
+        "currency": "HKD",
+        "cycle": "yearly",
+        "amount": 393.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": true
+        }
+      },
+      {
+        "id": "sub-8f6fb83e-b400-4c93-83a5-fb172f397c07",
+        "name": "Spendee Plus 订阅",
+        "currency": "HKD",
+        "cycle": "yearly",
+        "amount": 63.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": true
+        }
+      },
+      {
+        "id": "sub-b12b9901-f57d-401f-b692-2e87075728f9",
+        "name": "iCloud+订阅",
+        "currency": "HKD",
+        "cycle": "monthly",
+        "amount": 8.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": true
+        }
+      },
+      {
+        "id": "sub-d9906815-b496-4fe4-a196-04059dfcf9c1",
+        "name": "Nomad 流量包",
+        "currency": "USD",
+        "cycle": "monthly",
+        "amount": 10.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": false,
+          "Overseas": true
+        }
+      },
+      {
+        "id": "sub-d54aa703-48c9-4b02-a46a-500c504392b1",
+        "name": "Nomad 流量包",
+        "currency": "USD",
+        "cycle": "monthly",
+        "amount": 22.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": false
+        }
+      },
+      {
+        "id": "sub-c2d1963a-244b-4e7b-9fcd-bcc07ab3b935",
+        "name": "网易云音乐",
+        "currency": "CNY",
+        "cycle": "monthly",
+        "amount": 0.0,
+        "included": true,
+        "includeByDefault": true,
+        "appliesTo": {
+          "Mainland": true,
+          "Overseas": true
+        }
+      }
+    ],
+    "retiredIds": []
+  },
+  "result": {
+    "summary": {
+      "计算月份": "2026年8月",
+      "居住区域": "Mainland",
+      "可变费用合计(人民币)": 930,
+      "固定费用合计(人民币)": 518.87,
+      "额外预算合计(人民币)": 202.13,
+      "总预算(人民币)": 1448.87
+    },
+    "daily_details": [
+      {
+        "location": "Chengdu",
+        "type": "可变预算",
+        "currency": "CNY",
+        "day_count": 31,
+        "daily_standard_local": 30,
+        "variable_cost_local": 930,
+        "variable_cost_rmb": 930
+      }
+    ],
+    "fixed_details": [
+      {
+        "location": "Mainland",
+        "type": "固定预算",
+        "currency": "USD",
+        "avg_rate": 6.7375,
+        "local_cost": 22,
+        "rmb_cost": 148.23
+      },
+      {
+        "location": "Mainland",
+        "type": "固定预算",
+        "currency": "CNY",
+        "avg_rate": 1,
+        "local_cost": 129,
+        "rmb_cost": 129
+      },
+      {
+        "location": "Mainland",
+        "type": "固定预算",
+        "currency": "HKD",
+        "avg_rate": 0.8591,
+        "local_cost": 46,
+        "rmb_cost": 39.52
+      }
+    ],
+    "extra_details": [
+      {
+        "location": "Extra",
+        "type": "额外预算",
+        "currency": "USD",
+        "avg_rate": 6.7375,
+        "local_cost": 30,
+        "rmb_cost": 202.13
+      }
+    ],
+    "warnings": [],
+    "deduped_entries": 0,
+    "savedAt": "2026/9/28 19:54:25",
+    "region": "Mainland",
+    "includeTravel": false,
+    "stale": true,
+    "staleReason": "固定预算来源已改为订阅月均汇总"
+  }
+}

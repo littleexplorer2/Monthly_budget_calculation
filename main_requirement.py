@@ -29,7 +29,6 @@ def main() -> int:
         "-m",
         "pip",
         "install",
-        "--upgrade",
         "-r",
         str(REQUIREMENTS_FILE),
     ]

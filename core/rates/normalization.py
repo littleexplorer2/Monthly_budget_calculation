@@ -1,11 +1,10 @@
 """月度日历汇率与年度真实交易日 Close 的独立规范化规则。"""
 
-import datetime
 import math
 
 import pandas as pd
 
-def fill_month_rate_series(series, start_date, end_date, as_of=None):
+def fill_month_rate_series(series, start_date, end_date, *, as_of):
     """Fill calendar-day rates and estimate future days with month-to-date average.
 
     Weekends and holidays up to ``as_of`` use the nearest available rate. For the
@@ -14,7 +13,9 @@ def fill_month_rate_series(series, start_date, end_date, as_of=None):
     """
     start = pd.Timestamp(start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
-    today = pd.Timestamp(as_of or datetime.date.today()).normalize()
+    if as_of is None:
+        raise ValueError("月度汇率规范化必须显式提供 as_of")
+    today = pd.Timestamp(as_of).normalize()
     cutoff = min(end, today)
 
     values = pd.Series(series, dtype="float64").copy()
@@ -61,7 +62,7 @@ def _price_column(frame, name):
     return pd.Series(values, index=frame.index, dtype="float64")
 
 
-def _normalize_rate_frame(data, start_date, end_date):
+def _normalize_rate_frame(data, start_date, end_date, *, as_of):
     """将 yfinance 返回的数据规范成月度预算使用的日度汇率序列。
 
     兼容两种数据形态：
@@ -84,7 +85,7 @@ def _normalize_rate_frame(data, start_date, end_date):
         return None
 
     # 对齐整月日期范围：缺失（周末/节假日/未来日期）按既有规则填充。
-    return fill_month_rate_series(daily_rates, start_date, end_date)
+    return fill_month_rate_series(daily_rates, start_date, end_date, as_of=as_of)
 
 
 def _normalize_close_rate_frame(data, start_date, end_date):

@@ -79,15 +79,16 @@ function loadAppForTest() {
       openAddStandard: modules.standardsEditor.openAddStandard,
       confirmAddStandard: modules.standardsEditor.confirmAddStandard,
       openDefaultsModal: modules.standardsEditor.openDefaultsModal,
+      beginDefaultsDraft: modules.standardsEditor.beginDefaultsDraft,
       closeDefaultsModal: modules.standardsEditor.closeDefaultsModal,
       applyMonthInput: modules.standardsEditor.applyMonthInput,
       applyDefaultsInput: modules.standardsEditor.applyDefaultsInput,
       refreshDefaultsAfterServerChange: modules.standardsEditor.refreshDefaultsAfterServerChange,
       saveDefaultStandardsToServer: modules.standardsEditor.saveDefaultStandardsToServer,
-      activeStandardsOverride: modules.standards.activeStandardsOverride,
       persistNow: () => modules.persistence.persist('now'),
+      markMonthDirty: modules.persistence.markMonthDirty,
       snapshotBundle: modules.persistence.snapshotBundle,
-      applyBundle: modules.persistence.applyBundle,
+      applyBundle: modules.persistence.applyOfflineBundle,
       loadOverrides: modules.standards.loadOverrides,
       resetStandardsToDefault: modules.standards.resetStandardsToDefault,
       restoreDefaultEntry: modules.standardsEditor.restoreDefaultEntry,
@@ -97,7 +98,7 @@ function loadAppForTest() {
       setApi(mock) { modules.http.api = mock; },
       setToast(mock) { modules.feedback.toast = mock; },
       seed() {
-        // 该逻辑测试不执行异步 init；显式模拟 GET /api/state 已成功，
+        // 该逻辑测试不执行异步 init；显式模拟 v2 实体读取已成功，
         // 否则生产代码会正确地把初始化窗口视为只读。
         modules.persistence.runtime.serverStateReady = true;
         modules.state.state.meta = {
@@ -133,8 +134,29 @@ function loadAppForTest() {
         modules.state.state.editingDefaults = false;
         modules.state.state.defaultsDraft = null;
         modules.state.state.defaultsShowAll = false;
-        modules.state.state.overridesByMonth = {};
-        modules.state.state.itineraryByMonth = {};
+        const standards = {
+          _snapshot: true,
+          variable: JSON.parse(JSON.stringify(modules.state.state.standards.variable)),
+          travel: JSON.parse(JSON.stringify(modules.state.state.standards.travel)),
+          custom_locations: [], custom_currencies: {},
+          _locations: JSON.parse(JSON.stringify(modules.state.state.meta.locations)),
+          _location_names: JSON.parse(JSON.stringify(modules.state.state.meta.location_names)),
+          _currency_names: JSON.parse(JSON.stringify(modules.state.state.meta.currency_names)),
+        };
+        const entity = {
+          schemaVersion: 2, month: '2026-09', revision: 1,
+          updatedAt: '2026-09-01T00:00:00Z', itinerary: {},
+          options: { region: 'Mainland', includeTravel: false, travelSelected: null },
+          standards, subscriptions: { items: [], retiredIds: [] }, result: null,
+        };
+        modules.state.state.monthsByKey = { '2026-09': JSON.parse(JSON.stringify(entity)) };
+        modules.persistence.runtime.serverMonthBaselines = { '2026-09': JSON.parse(JSON.stringify(entity)) };
+        modules.persistence.runtime.globalBaseline = {
+          schemaVersion: 2, revision: 0, selectedMonth: '2026-09',
+          annualBudgetsByYear: {}, annualResultsByYear: {}, assetPortfoliosById: {},
+        };
+        modules.persistence.runtime.dirtyMonthFields = Object.create(null);
+        modules.persistence.runtime.dirtyGlobalFields = new Set();
         modules.state.state.includeTravel = false;
         modules.state.state.travelSelected = null;
       },
@@ -146,6 +168,21 @@ function loadAppForTest() {
     fetchCalls,
   };
 }
+
+test('打开默认配置不会把当月临时地点或币种隐式提升为服务器默认值', () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.state.customLocations = [
+    { key: 'Temporary', name: '临时地点', category: 'variable', currency: 'EUR' },
+  ];
+  app.state.customCurrencies = { EUR: '欧元' };
+  app.state.standards.variable.Temporary = { EUR: 99 };
+  app.beginDefaultsDraft();
+
+  assert.equal(app.state.defaultsDraft.standards.variable.Temporary, undefined);
+  assert.equal(app.state.defaultsDraft.locations.some((item) => item.key === 'Temporary'), false);
+  assert.equal(app.state.defaultsDraft.currencyNames.EUR, undefined);
+});
 
 test('当月预算里与默认值不同的行会带「与默认值不同」标记，但不带任何改动按钮', () => {
   const app = loadAppForTest();
@@ -195,7 +232,8 @@ test('默认标准是独立区域：改动只进草稿，不写当月覆盖', ()
   app.state.defaultsDraft.standards.variable.Shenzhen.CNY = 120;
   assert.equal(app.defaultsDraftDirty(), true);
   assert.equal(app.state.standards.variable.Shenzhen.CNY, 80, '当月数值不应被默认草稿改动');
-  assert.equal(app.state.overridesByMonth['2026-09'], undefined, '默认草稿不应写成当月覆盖');
+  assert.equal(app.state.monthsByKey['2026-09'].standards.variable.Shenzhen.CNY, 80,
+    '默认草稿不应写进当月实体');
 
   const chip = app.defaultsDiffChip('variable', 'Shenzhen', 'CNY', '');
   assert.match(chip, /与已保存默认值不同/);
@@ -222,7 +260,7 @@ test('保存默认标准后当月数值保持不变（不会被覆盖）', () =>
   assert.equal(app.state.editingDefaults, true, '保存后编辑区保持展开');
 });
 
-test('保存默认标准前先落盘当月完整快照，重载后仍保持旧值', async () => {
+test('保存默认标准不写任何月份实体，重载后既有快照仍保持旧值', async () => {
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
@@ -232,31 +270,27 @@ test('保存默认标准前先落盘当月完整快照，重载后仍保持旧�
   const nextMeta = JSON.parse(JSON.stringify(app.state.meta));
   nextMeta.default_standards.variable.Shenzhen.CNY = 120;
   const calls = [];
-  let persistedBundle = null;
+  const persistedBundle = JSON.parse(JSON.stringify(app.state.monthsByKey['2026-09']));
   app.setToast(() => {});
   app.setApi(async (url, options = {}) => {
     calls.push(url);
-    if (url === '/api/state') {
-      persistedBundle = JSON.parse(JSON.stringify(options.body));
-      return persistedBundle;
-    }
     if (url === '/api/defaults') return nextMeta;
     throw new Error(`unexpected request: ${url}`);
   });
 
   await app.saveDefaultStandardsToServer();
 
-  assert.deepEqual(calls, ['/api/state', '/api/defaults'], '当月快照必须在修改默认值前落盘');
-  const savedMonth = persistedBundle.overridesByMonth['2026-09'];
+  assert.deepEqual(calls, ['/api/defaults'], '修改默认值不得打开或改写任何月份实体');
+  const savedMonth = persistedBundle.standards;
   assert.equal(savedMonth._snapshot, true, '当月必须固化为完整快照');
   assert.equal(savedMonth.variable.Shenzhen.CNY, 80);
 
-  // 模拟默认值已改变后的全新页面加载：先取新 meta，再恢复 app-state。
+  // 模拟默认值已改变后的全新页面加载：月份实体仍携带旧标准快照。
   const reloaded = loadAppForTest();
   reloaded.seed();
   reloaded.state.meta = JSON.parse(JSON.stringify(nextMeta));
   reloaded.resetStandardsToDefault();
-  reloaded.applyBundle(persistedBundle);
+  reloaded.state.monthsByKey['2026-09'] = JSON.parse(JSON.stringify(persistedBundle));
   reloaded.loadOverrides();
 
   assert.equal(
@@ -266,30 +300,64 @@ test('保存默认标准前先落盘当月完整快照，重载后仍保持旧�
   );
 });
 
-test('当月快照落盘失败时不修改服务器默认标准', async () => {
+test('默认标准保存失败不改写任何月份实体或本地默认基线', async () => {
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
   app.state.defaultsDraft.standards.variable.Shenzhen.CNY = 120;
   const oldDefault = app.state.meta.default_standards.variable.Shenzhen.CNY;
+  const monthBefore = JSON.stringify(app.state.monthsByKey['2026-09']);
   const calls = [];
   const toasts = [];
   app.setToast((message, type) => toasts.push({ message, type }));
   app.setApi(async (url) => {
     calls.push(url);
-    if (url === '/api/state') throw new Error('写盘失败');
-    throw new Error('不应请求默认标准接口');
+    if (url === '/api/defaults') throw new Error('默认标准写盘失败');
+    if (url === '/api/meta') return JSON.parse(JSON.stringify(app.state.meta));
+    throw new Error(`unexpected request: ${url}`);
   });
 
   await app.saveDefaultStandardsToServer();
 
-  assert.deepEqual(calls, ['/api/state']);
+  assert.deepEqual(calls, ['/api/defaults', '/api/meta']);
   assert.equal(app.state.meta.default_standards.variable.Shenzhen.CNY, oldDefault);
-  assert.equal(app.state.overridesByMonth['2026-09']._snapshot, true, '本地快照仍应保留供重试');
-  assert.deepEqual(toasts, [{ message: '当前及历史月份快照保存失败，已取消修改服务器默认标准', type: 'error' }]);
+  assert.equal(JSON.stringify(app.state.monthsByKey['2026-09']), monthBefore);
+  assert.deepEqual(toasts.at(-1), { message: '默认标准写盘失败', type: 'error' });
 });
 
-test('默认标准保存开始后冻结提交体，并在月份快照等待期间阻止重复提交', async () => {
+test('默认配置 revision 冲突后刷新基线并保留本页草稿', async () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.openDefaultsModal();
+  app.state.defaultsDraft.standards.variable.Shenzhen.CNY = 120;
+  const latest = JSON.parse(JSON.stringify(app.state.meta));
+  latest.defaults_revision = '1'.repeat(64);
+  latest.default_standards.variable.Shenzhen.CNY = 90;
+  const calls = [];
+  const toasts = [];
+  app.setToast((message, type) => toasts.push({ message, type }));
+  app.setApi(async (url, options = {}) => {
+    calls.push(url);
+    if (url === '/api/defaults') {
+      const err = new Error('revision conflict');
+      err.code = 'DEFAULTS_CONFLICT';
+      err.status = 409;
+      throw err;
+    }
+    if (url === '/api/meta') return latest;
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  await app.saveDefaultStandardsToServer();
+
+  assert.deepEqual(calls, ['/api/defaults', '/api/meta']);
+  assert.equal(app.state.meta.defaults_revision, '1'.repeat(64));
+  assert.equal(app.state.defaultsDraft.standards.variable.Shenzhen.CNY, 120,
+    'conflict refresh must not discard this tab draft');
+  assert.equal(toasts.at(-1).type, 'warn');
+});
+
+test('默认标准保存开始后冻结提交体，并在请求期间阻止重复提交', async () => {
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
@@ -300,32 +368,29 @@ test('默认标准保存开始后冻结提交体，并在月份快照等待期�
   draft.locationNames.Custom = '原地点名';
   draft.currencyNames.EUR = '原币种名';
 
-  let releaseStateWrite;
-  let stateWriteStarted;
-  const stateGate = new Promise((resolve) => { releaseStateWrite = resolve; });
-  const stateStarted = new Promise((resolve) => { stateWriteStarted = resolve; });
+  let releaseDefaultsWrite;
+  let defaultsWriteStarted;
+  const defaultsGate = new Promise((resolve) => { releaseDefaultsWrite = resolve; });
+  const defaultsStarted = new Promise((resolve) => { defaultsWriteStarted = resolve; });
   const calls = [];
   let defaultsBody = null;
   app.setToast(() => {});
   app.setApi(async (url, options = {}) => {
     calls.push(url);
-    if (url === '/api/state') {
-      stateWriteStarted();
-      await stateGate;
-      return options.body;
-    }
     if (url === '/api/defaults') {
       defaultsBody = JSON.parse(JSON.stringify(options.body));
+      defaultsWriteStarted();
+      await defaultsGate;
       return JSON.parse(JSON.stringify(app.state.meta));
     }
     throw new Error(`unexpected request: ${url}`);
   });
 
   const firstSave = app.saveDefaultStandardsToServer();
-  await stateStarted;
-  assert.equal(app.el('#btn-save-defaults').disabled, true, '等待月份快照时应立即禁用重复保存');
+  await defaultsStarted;
+  assert.equal(app.el('#btn-save-defaults').disabled, true, '等待默认标准写入时应立即禁用重复保存');
 
-  // 模拟用户在慢速 /api/state 请求期间继续编辑草稿；POST 必须仍使用点击保存时的值。
+  // 模拟用户在慢速 defaults POST 期间继续编辑草稿；提交体必须仍使用点击保存时的值。
   draft.standards.variable.Shenzhen.CNY = 999;
   draft.standards.variable.Custom.EUR = 888;
   draft.locations.find((item) => item.key === 'Custom').name = '后来地点名';
@@ -333,10 +398,10 @@ test('默认标准保存开始后冻结提交体，并在月份快照等待期�
   draft.currencyNames.EUR = '后来币种名';
   await app.saveDefaultStandardsToServer();
 
-  releaseStateWrite();
+  releaseDefaultsWrite();
   await firstSave;
 
-  assert.deepEqual(calls, ['/api/state', '/api/defaults'], '重复点击不得启动第二条保存管线');
+  assert.deepEqual(calls, ['/api/defaults'], '重复点击不得启动第二条保存管线');
   assert.equal(defaultsBody.variable.Shenzhen.CNY, 120);
   assert.equal(defaultsBody.variable.Custom.EUR, 50);
   assert.equal(defaultsBody.location_names.Custom, '原地点名');
@@ -344,23 +409,25 @@ test('默认标准保存开始后冻结提交体，并在月份快照等待期�
   assert.equal(app.el('#btn-save-defaults').disabled, false, '保存结束后应恢复按钮');
 });
 
-test('普通状态持久化把旧差异覆盖升级为当前月份完整标准快照', async () => {
+test('普通状态持久化只写当前月份完整标准快照', async () => {
   const app = loadAppForTest();
   app.seed();
-  app.state.overridesByMonth['2026-09'] = { variable: { Shenzhen: { CNY: 95 } } };
-  app.resetStandardsToDefault();
-  assert.equal(app.loadOverrides(), true, '旧版差异结构仍应能够读取');
-  assert.equal(app.state.standards.variable.Shenzhen.CNY, 95);
+  app.state.monthsByKey['2026-09'].standards.variable.Shenzhen.CNY = 95;
+  app.markMonthDirty('standards', '2026-09');
   let stateBody = null;
   app.setApi(async (url, options = {}) => {
-    assert.equal(url, '/api/state');
+    assert.equal(url, '/api/months/2026-09');
     stateBody = JSON.parse(JSON.stringify(options.body));
-    return options.body;
+    return {
+      ...JSON.parse(JSON.stringify(app.state.monthsByKey['2026-09'])),
+      ...stateBody.data,
+      revision: 2,
+    };
   });
 
   assert.equal(await app.persistNow(), true);
 
-  const saved = stateBody.overridesByMonth['2026-09'];
+  const saved = stateBody.data.standards;
   assert.equal(saved._snapshot, true);
   assert.equal(saved.variable.Shenzhen.CNY, 95);
   assert.equal(Object.hasOwn(saved, 'fixed'), false, '订阅固定预算不得写回月份标准覆盖');
@@ -370,22 +437,10 @@ test('普通状态持久化把旧差异覆盖升级为当前月份完整标准�
   reloaded.seed();
   reloaded.state.meta.default_standards.variable.Shenzhen.CNY = 777;
   reloaded.resetStandardsToDefault();
-  reloaded.state.overridesByMonth = { '2026-09': saved };
+  reloaded.state.monthsByKey['2026-09'].standards = saved;
   reloaded.loadOverrides();
   assert.equal(reloaded.state.standards.variable.Shenzhen.CNY, 95,
     '另一标签修改默认值后，已保存月份不得按新默认值重新解释');
-});
-
-test('月度计算始终提交当前完整标准快照，不受并发默认值变化影响', () => {
-  const app = loadAppForTest();
-  app.seed();
-  app.state.standards.variable.Shenzhen.CNY = 95;
-  app.state.meta.default_standards.variable.Shenzhen.CNY = 777;
-
-  const submitted = app.activeStandardsOverride();
-  assert.equal(submitted._snapshot, true);
-  assert.equal(submitted.variable.Shenzhen.CNY, 95);
-  assert.equal(submitted.fixed.Mainland.CNY, 64, '请求必须包含完整标准，不能只发送差异');
 });
 
 test('收起编辑区会丢弃草稿；重新展开又能拿到干净的草稿', () => {
@@ -413,7 +468,7 @@ test('两个区域的输入互不影响（当月改当月，默认改草稿）',
   app.applyMonthInput('variable', 'Shenzhen', 'CNY', '', 95);
   assert.equal(app.state.standards.variable.Shenzhen.CNY, 95);
   assert.equal(app.state.defaultsDraft.standards.variable.Shenzhen.CNY, 80, '默认草稿不受影响');
-  assert.equal(app.state.overridesByMonth['2026-09'].variable.Shenzhen.CNY, 95, '当月改动应记入覆盖');
+  assert.equal(app.state.monthsByKey['2026-09'].standards.variable.Shenzhen.CNY, 95, '当月改动应写入实体快照');
 
   // 默认区域输入：只改草稿
   app.applyDefaultsInput('variable', 'Shenzhen', 'CNY', '', 130);
@@ -453,7 +508,7 @@ test('未勾选「显示全部旅居预算」时只列本月行程里的旅居�
   const app = loadAppForTest();
   app.seed();
   app.openDefaultsModal();
-  app.state.itineraryByMonth['2026-09'] = { Shanghai: [{ start: '2026-09-01', end: '2026-09-03' }] };
+  app.state.monthsByKey['2026-09'].itinerary = { Shanghai: [{ start: '2026-09-01', end: '2026-09-03' }] };
   app.state.region = 'Overseas';
 
   const scope = app.defaultsScope();
@@ -479,6 +534,11 @@ test('默认标准弹窗的旅居预算不再依赖「包含旅居」开关，�
 
   const host = app.el('.defaults-editor');
   assert.match(host.innerHTML, /旅居预算/, '关掉旅居开关时默认标准弹窗仍应有旅居预算');
+  assert.match(
+    host.innerHTML,
+    /class="defaults-travel-block">[\s\S]*?class="sheet-head"[\s\S]*?data-table="travel"/,
+    '旅居标题和列表应属于同一布局块，避免二次分隔与多余纵向留白',
+  );
   assert.match(host.innerHTML, /data-table="travel"/);
   assert.doesNotMatch(host.innerHTML, /Taipei/, '未勾选时只列本月行程里的旅居地点');
   assert.match(host.innerHTML, /＋ 新建旅居地点/, '没有可编辑地点时也要能新建');
@@ -506,7 +566,8 @@ test('显示范围开关只影响展示：不改数值、不写覆盖、不发�
 
   assert.equal(JSON.stringify(app.state.standards), monthSnapshot, '当月标准不应被显示范围影响');
   assert.equal(JSON.stringify(app.state.defaultsDraft.standards), draftSnapshot, '草稿不应被显示范围影响');
-  assert.equal(app.state.overridesByMonth['2026-09'], undefined, '显示范围不应写成当月覆盖');
+  assert.equal(app.state.monthsByKey['2026-09'].standards.variable.Shenzhen.CNY, 80,
+    '显示范围不应改写当月标准实体');
   assert.equal(app.fetchCalls.length, callsBefore, '显示范围切换不应发任何请求');
   assert.equal(app.defaultsDraftDirty(), false);
 });

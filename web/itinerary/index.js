@@ -67,13 +67,14 @@
        * 行程访问（按月份索引）
        * ------------------------------------------------------------------------ */
       function currentItinerary() {
-        return state.itineraryByMonth[monthlyModule.monthKey()] || {};
+        const entity = state.monthsByKey[monthlyModule.monthKey()];
+        return entity && entity.itinerary ? entity.itinerary : {};
       }
 
       function ensureCurrentItinerary() {
-        const key = monthlyModule.monthKey();
-        if (!state.itineraryByMonth[key]) state.itineraryByMonth[key] = {};
-        return state.itineraryByMonth[key];
+        const entity = persistenceModule.ensureLocalMonthDraft(monthlyModule.monthKey());
+        if (!entity.itinerary || typeof entity.itinerary !== 'object') entity.itinerary = {};
+        return entity.itinerary;
       }
 
       function addRange(location, start, end) {

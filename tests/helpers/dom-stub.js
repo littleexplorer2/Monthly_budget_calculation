@@ -460,26 +460,78 @@ function defaultMetaFixture() {
 
 function defaultStateFixture() {
   return {
-    version: 1,
-    year: 2026,
-    month: 9,
-    itineraryByMonth: {},
-    optionsByMonth: {},
-    overridesByMonth: {},
-    resultsByMonth: {},
-    subscriptionsByMonth: {},
-    annualBudgetsByYear: {},
-    annualResultsByYear: {},
-    assetPortfoliosById: {},
+    schemaVersion: 2,
+    months: {},
+    global: {
+      schemaVersion: 2,
+      revision: 0,
+      updatedAt: null,
+      selectedMonth: '2026-09',
+      annualBudgetsByYear: {},
+      annualResultsByYear: {},
+      assetPortfoliosById: {},
+    },
+  };
+}
+
+function stateFixtureV2(raw, meta) {
+  const source = cloneJson(raw || defaultStateFixture());
+  if (source.schemaVersion === 2 && source.months && source.global) return source;
+  const maps = ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth', 'subscriptionsByMonth'];
+  const keys = new Set(maps.flatMap((field) => Object.keys(source[field] || {})));
+  const defaultStandards = {
+    _snapshot: true,
+    variable: cloneJson((meta.default_standards || {}).variable || {}),
+    travel: cloneJson((meta.default_standards || {}).travel || {}),
+    custom_locations: [],
+    custom_currencies: {},
+    _locations: cloneJson(meta.locations || []),
+    _location_names: cloneJson(meta.location_names || {}),
+    _currency_names: cloneJson(meta.currency_names || {}),
+  };
+  const months = {};
+  for (const key of keys) {
+    months[key] = {
+      schemaVersion: 2,
+      month: key,
+      createdAt: '2026-09-01T00:00:00Z',
+      createdFrom: { kind: 'migrated-v1', defaultsRevision: '0'.repeat(64) },
+      revision: 1,
+      updatedAt: '2026-09-01T00:00:00Z',
+      itinerary: cloneJson((source.itineraryByMonth || {})[key] || {}),
+      options: cloneJson((source.optionsByMonth || {})[key]
+        || { region: 'Mainland', includeTravel: false, travelSelected: null }),
+      standards: cloneJson((source.overridesByMonth || {})[key] || defaultStandards),
+      subscriptions: cloneJson((source.subscriptionsByMonth || {})[key]
+        || { items: [], retiredIds: [] }),
+      result: cloneJson((source.resultsByMonth || {})[key] || null),
+    };
+  }
+  const selectedMonth = Number.isInteger(source.year) && Number.isInteger(source.month)
+    ? `${source.year}-${String(source.month).padStart(2, '0')}` : null;
+  return {
+    schemaVersion: 2,
+    months,
+    global: {
+      schemaVersion: 2,
+      revision: 1,
+      updatedAt: '2026-09-01T00:00:00Z',
+      selectedMonth,
+      annualBudgetsByYear: cloneJson(source.annualBudgetsByYear || {}),
+      annualResultsByYear: cloneJson(source.annualResultsByYear || {}),
+      assetPortfoliosById: cloneJson(source.assetPortfoliosById || {}),
+    },
   };
 }
 
 /**
  * 用真实 index.html + app.js 装配一个可交互的应用实例。
  * @param {object} options.meta  可注入的 /api/meta 返回；默认用内存固定夹具
- * @param {object} options.state  可注入的 GET /api/state 返回
- * @param {boolean|object|function} options.statePutFailure  模拟 PUT /api/state 失败
- * @param {object|function} options.monthlyBudget 可注入的 POST /api/calculate 返回
+ * @param {object} options.state  可注入的 v2 月份与全局状态夹具
+ * @param {boolean|object|function} options.statePutFailure  模拟 v2 月份/全局写入失败
+ * @param {object|function} options.monthlyBudget 可注入的 POST /api/months/{month}/calculate 返回
+ * @param {object|function} options.backups 可注入的 GET /api/backups 返回
+ * @param {object|function} options.restoreBackup 可注入的 POST /api/backups/restore 返回
  * @param {object|function} options.annualRates  可注入的 GET /api/annual-rates 返回
  * @param {object|function} options.assetRates   可注入的 GET /api/asset-rates 返回
  * @param {object|function} options.annualBudget 可注入的 POST /api/annual-budget 返回
@@ -490,12 +542,15 @@ function createApp(options = {}) {
   const indexHtml = fs.readFileSync(path.join(root, 'web', 'index.html'), 'utf8');
 
   const meta = cloneJson(options.meta || defaultMetaFixture());
-  const initialState = cloneJson(options.state || defaultStateFixture());
+  const initialState = stateFixtureV2(options.state || defaultStateFixture(), meta);
+  const serverMonths = initialState.months;
+  const serverGlobal = initialState.global;
 
   const doc = createDocument(indexHtml);
   const storage = new Map();
   const calls = [];
   const requests = [];
+  let reloadCount = 0;
   const responseValue = async (configured, request, fallback) => {
     const value = configured === undefined ? fallback : configured;
     return cloneJson(typeof value === 'function' ? await value(request) : value);
@@ -509,6 +564,7 @@ function createApp(options = {}) {
     },
     navigator: { sendBeacon: () => true, userAgent: 'test' },
     crypto: { randomUUID: () => 'test-tab' },
+    location: { reload: () => { reloadCount += 1; } },
     addEventListener: () => {},
     confirm: (...args) => (typeof options.confirm === 'function' ? options.confirm(...args) : true),
     fetch: async (url, fetchOptions = {}) => {
@@ -525,20 +581,177 @@ function createApp(options = {}) {
       };
       requests.push(request);
       const send = (o) => ({ ok: true, status: 200, json: async () => o });
+      const failStateWrite = async () => {
+        if (!options.statePutFailure) return null;
+        const configured = typeof options.statePutFailure === 'function'
+          ? await options.statePutFailure(request)
+          : options.statePutFailure;
+        const failure = configured && typeof configured === 'object' ? configured : {};
+        return {
+          ok: false,
+          status: Number(failure.status) || 503,
+          json: async () => failure.body || { error: { code: 'state_write_failed', message: '测试：状态写入失败' } },
+        };
+      };
       if (u.includes('/api/meta')) return send(meta);
-      if (u.includes('/api/state')) {
-        if (request.method === 'PUT' && options.statePutFailure) {
-          const configured = typeof options.statePutFailure === 'function'
-            ? await options.statePutFailure(request)
-            : options.statePutFailure;
-          const failure = configured && typeof configured === 'object' ? configured : {};
-          return {
-            ok: false,
-            status: Number(failure.status) || 503,
-            json: async () => failure.body || { error: { code: 'state_write_failed', message: '测试：状态写入失败' } },
-          };
+      if (u === '/api/months' && request.method === 'GET') {
+        return send({ schemaVersion: 2, months: cloneJson(serverMonths) });
+      }
+      const monthMatch = u.match(/^\/api\/months\/([^/?]+)(?:\/(ensure|calculate))?$/);
+      if (monthMatch) {
+        const key = decodeURIComponent(monthMatch[1]);
+        const action = monthMatch[2] || null;
+        if (action === 'ensure' && request.method === 'POST') {
+          const created = !serverMonths[key];
+          if (created) {
+            const previousKey = Object.keys(serverMonths).filter((item) => item < key).sort().at(-1);
+            const previous = previousKey ? serverMonths[previousKey].subscriptions : null;
+            const previousItems = cloneJson((previous && previous.items) || []);
+            const retired = new Set(cloneJson((previous && previous.retiredIds) || []));
+            const configured = meta.default_subscriptions_configured === true;
+            const catalog = configured ? cloneJson(meta.default_subscriptions || []) : null;
+            const inherited = [];
+            const normalizeRegions = (item) => cloneJson(item.appliesTo
+              || { Mainland: true, Overseas: true });
+            const fromDefault = (item) => ({
+              ...cloneJson(item),
+              included: true,
+              includeByDefault: true,
+              appliesTo: normalizeRegions(item),
+            });
+            if (catalog !== null) {
+              const byId = new Map(catalog.map((item) => [String(item.id), item]));
+              const inheritedIds = new Set();
+              for (const old of previousItems) {
+                const id = String(old.id);
+                const item = byId.get(id);
+                if (retired.has(id) || !old.includeByDefault || !item || !item.includeByDefault) {
+                  retired.add(id);
+                  continue;
+                }
+                inherited.push({ ...fromDefault(item), appliesTo: normalizeRegions(old) });
+                inheritedIds.add(id);
+              }
+              for (const item of catalog) {
+                const id = String(item.id);
+                if (item.includeByDefault && !inheritedIds.has(id) && !retired.has(id)) {
+                  inherited.push(fromDefault(item));
+                }
+              }
+            } else {
+              for (const old of previousItems) {
+                const id = String(old.id);
+                if (retired.has(id) || !old.includeByDefault) {
+                  retired.add(id);
+                  continue;
+                }
+                inherited.push({
+                  ...cloneJson(old), included: true, includeByDefault: true,
+                  appliesTo: normalizeRegions(old),
+                });
+              }
+            }
+            serverMonths[key] = {
+              schemaVersion: 2, month: key, revision: 1, updatedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+              createdFrom: {
+                kind: 'defaults', defaultsRevision: meta.defaults_revision,
+              },
+              itinerary: {},
+              options: { region: 'Mainland', includeTravel: false, travelSelected: null },
+              standards: {
+                _snapshot: true,
+                variable: cloneJson((meta.default_standards || {}).variable || {}),
+                travel: cloneJson((meta.default_standards || {}).travel || {}),
+                custom_locations: [], custom_currencies: {},
+                _locations: cloneJson(meta.locations || []),
+                _location_names: cloneJson(meta.location_names || {}),
+                _currency_names: cloneJson(meta.currency_names || {}),
+              },
+              subscriptions: { items: inherited, retiredIds: Array.from(retired).sort() },
+              result: null,
+            };
+          }
+          return send({ created, month: cloneJson(serverMonths[key]) });
         }
-        return send(request.method === 'GET' ? initialState : {});
+        if (action === 'calculate' && request.method === 'POST') {
+          const baseRevision = request.body.base_revision;
+          const result = await responseValue(options.monthlyBudget, request, {
+            summary: { '预算总计': 0 },
+            daily_details: [], fixed_details: [], extra_details: [], warnings: [],
+          });
+          const entity = serverMonths[key];
+          if (!entity || entity.revision !== baseRevision) {
+            return {
+              ok: false,
+              status: 409,
+              json: async () => ({ error: { code: 'STATE_CONFLICT', message: '计算期间月份输入已变化' } }),
+            };
+          }
+          entity.revision += 1;
+          entity.result = {
+            ...result, savedAt: new Date().toISOString(), region: entity.options.region,
+            includeTravel: entity.options.includeTravel,
+            budgetModel: 'subscription-fixed-monthly-equivalent-v2', stale: false,
+          };
+          return send({ result: cloneJson(entity.result), month: cloneJson(entity) });
+        }
+        if (request.method === 'GET') return send(cloneJson(serverMonths[key]));
+        if (request.method === 'PUT') {
+          const failed = await failStateWrite();
+          if (failed) return failed;
+          const current = serverMonths[key];
+          if (!current || request.body.base_revision !== current.revision) {
+            return { ok: false, status: 409, json: async () => ({ error: { code: 'STATE_CONFLICT', message: '测试冲突' } }) };
+          }
+          serverMonths[key] = {
+            schemaVersion: 2, month: key, revision: current.revision + 1,
+            createdAt: current.createdAt,
+            createdFrom: cloneJson(current.createdFrom),
+            updatedAt: new Date().toISOString(), ...cloneJson(request.body.data),
+          };
+          return send(cloneJson(serverMonths[key]));
+        }
+        if (request.method === 'DELETE') {
+          const failed = await failStateWrite();
+          if (failed) return failed;
+          delete serverMonths[key];
+          return send({ deleted: true, month: key });
+        }
+      }
+      if (u === '/api/global' && request.method === 'GET') return send(cloneJson(serverGlobal));
+      if (u === '/api/global' && request.method === 'PUT') {
+        const failed = await failStateWrite();
+        if (failed) return failed;
+        Object.assign(serverGlobal, cloneJson(request.body.data), {
+          schemaVersion: 2,
+          revision: serverGlobal.revision + 1,
+          updatedAt: new Date().toISOString(),
+        });
+        return send(cloneJson(serverGlobal));
+      }
+      if (u === '/api/global/selection' && request.method === 'PUT') {
+        serverGlobal.selectedMonth = request.body.month;
+        return send(cloneJson(serverGlobal));
+      }
+      if (u === '/api/state/clear' && request.method === 'POST') {
+        for (const key of Object.keys(serverMonths)) delete serverMonths[key];
+        Object.assign(serverGlobal, {
+          revision: 0, selectedMonth: null,
+          annualBudgetsByYear: {}, annualResultsByYear: {}, assetPortfoliosById: {},
+        });
+        return send({ cleared: true, backup: 'test-backup' });
+      }
+      if (u === '/api/backups' && request.method === 'GET') {
+        return send(await responseValue(options.backups, request, {
+          backups: [], currentToken: '0'.repeat(64),
+        }));
+      }
+      if (u === '/api/backups/restore' && request.method === 'POST') {
+        return send(await responseValue(options.restoreBackup, request, {
+          restored: true, backupId: request.body.backup_id, months: 0,
+          currentToken: '1'.repeat(64),
+        }));
       }
       if (u.includes('/api/network-check')) {
         return send(await responseValue(options.networkCheck, request, { ok: true }));
@@ -573,12 +786,6 @@ function createApp(options = {}) {
           stats: {},
           errors: {},
           complete: true,
-        }));
-      }
-      if (u.includes('/api/calculate')) {
-        return send(await responseValue(options.monthlyBudget, request, {
-          summary: { '预算总计': 0 },
-          daily_details: [], fixed_details: [], extra_details: [], warnings: [],
         }));
       }
       if (u.includes('/api/annual-budget')) {
@@ -639,9 +846,10 @@ function createApp(options = {}) {
       state: modules.state.state, init: modules.shell.init, renderStandards: modules.standardsView.renderStandards, refreshRowChip: modules.standardsEditor.refreshRowChip, applyDefaultsInput: modules.standardsEditor.applyDefaultsInput, applyMonthInput: modules.standardsEditor.applyMonthInput,
       renderResult: modules.results.renderResult, clearResult: modules.results.clearResult, splitFixedExtraDetails: modules.results.splitFixedExtraDetails,
       renderAnnualBudget: modules.annual.renderAnnualBudget, loadAnnualRates: modules.annual.loadAnnualRates, calculateAnnualBudget: modules.annual.calculateAnnualBudget, invalidateAnnualResult: modules.annual.invalidateAnnualResult,
-      annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyBundle, switchTab: modules.shell.switchTab, openSection: modules.navigation.openSection,
-      collectAnalysisMonths: modules.analysis.collectAnalysisMonths, markCurrentResultStale: modules.results.markCurrentResultStale, addRange: modules.itinerary.addRange, deleteMonthData: modules.data.deleteMonthData,
+      annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyOfflineBundle, switchTab: modules.shell.switchTab, openSection: modules.navigation.openSection,
+      collectAnalysisMonths: modules.analysis.collectAnalysisMonths, markCurrentResultStale: modules.results.markCurrentResultStale, addRange: modules.itinerary.addRange, deleteMonthData: modules.data.deleteMonthData, openDataManager: modules.data.openDataManager, restoreBackup: modules.data.restoreBackup,
       calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth, navigateToMonth: modules.monthly.navigateToMonth,
+      saveMonthlyState: modules.persistence.saveState,
       renderSubscriptions: modules.subscriptions.render, addSubscription: modules.subscriptions.addItem, updateSubscription: modules.subscriptions.updateField, subscriptionTotals: modules.subscriptions.totals, ensureSubscriptions: modules.subscriptions.ensureMonth,
       renderAssets: modules.assets.render, loadAssetRates: modules.assets.loadRates, assetRateState: modules.assets.rateState, addAsset: modules.assets.addItem, updateAsset: modules.assets.updateField, updateAssetSetting: modules.assets.updateSetting, assetPortfolio: modules.assets.portfolio, assetSummary: modules.assets.compute,
     };
@@ -654,10 +862,10 @@ function createApp(options = {}) {
     context.app.init = () => init({ skipAutomaticUpdates: true });
   }
 
-  return { doc, app: context.app, meta, calls, requests, storage };
+  return { doc, app: context.app, meta, calls, requests, storage, get reloadCount() { return reloadCount; } };
 }
 
 module.exports = {
-  createDocument, createApp, defaultMetaFixture, defaultStateFixture,
+  createDocument, createApp, defaultMetaFixture, defaultStateFixture, stateFixtureV2,
   parseHTML, El, Doc, TextNode,
 };

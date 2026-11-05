@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 2,
+  "revision": 1,
+  "updatedAt": "2026-11-05T11:04:14Z",
+  "selectedMonth": "2026-04",
+  "annualBudgetsByYear": {
+    "2026": {
+      "CNY": 29000.0,
+      "HKD": 2000.0,
+      "USD": 0.0
+    }
+  },
+  "annualResultsByYear": {
+    "2026": {
+      "summary": {
+        "全年预算合计(人民币)": 30738.22
+      },
+      "details": [
+        {
+          "currency": "CNY",
+          "amount": 29000,
+          "average_rate": 1,
+          "cny_amount": 29000,
+          "observation_count": 1,
+          "first_date": "2026-11-05",
+          "last_date": "2026-11-05"
+        },
+        {
+          "currency": "HKD",
+          "amount": 2000,
+          "average_rate": 0.8691084582697262,
+          "cny_amount": 1738.22,
+          "observation_count": 220,
+          "first_date": "2026-01-02",
+          "last_date": "2026-11-05"
+        },
+        {
+          "currency": "USD",
+          "amount": 0,
+          "average_rate": 6.806614981998097,
+          "cny_amount": 0,
+          "observation_count": 220,
+          "first_date": "2026-01-02",
+          "last_date": "2026-11-05"
+        }
+      ],
+      "year": 2026,
+      "start_date": "2026-01-01",
+      "requested_through": "2026-11-05",
+      "observed_through": "2026-11-05",
+      "source": "Yahoo Finance",
+      "price_field": "Close",
+      "non_trading_days": "excluded",
+      "errors": {},
+      "calculatedAt": "2026/11/5 19:01:48"
+    }
+  },
+  "assetPortfoliosById": {}
+}

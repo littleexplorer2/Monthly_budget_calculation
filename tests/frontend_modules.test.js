@@ -79,9 +79,9 @@ test('explicit module injection shares a single persistence pipeline and preserv
   modules.http.api = async (url, options) => { requests.push({ url, options }); return {}; };
   assert.equal(await modules.persistence.persist('now', 'annual'), true);
   assert.equal(requests.length, 1);
-  assert.equal(requests[0].url, '/api/state');
+  assert.equal(requests[0].url, '/api/global');
   assert.equal(requests[0].options.method, 'PUT');
-  assert.ok(requests[0].options.body.annualBudgetsByYear);
-  assert.equal(Object.hasOwn(requests[0].options.body, 'itineraryByMonth'), false);
+  assert.ok(requests[0].options.body.data.annualBudgetsByYear);
+  assert.equal(Object.hasOwn(requests[0].options.body.data, 'itinerary'), false);
   clearTimeout(modules.lifecycle.runtime.tabHeartbeatTimer);
 });

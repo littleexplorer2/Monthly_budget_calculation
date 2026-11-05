@@ -21,7 +21,8 @@
           includeTravel: !!state.includeTravel,
           travelSelected: state.travelSelected === null ? null : Array.from(state.travelSelected),
         };
-        const prev = state.optionsByMonth && state.optionsByMonth[service.monthKey()];
+        const entity = state.monthsByKey[service.monthKey()];
+        const prev = entity && entity.options;
         if (markSaved) o.savedAt = new Date().toISOString();
         else if (prev && prev.savedAt) o.savedAt = prev.savedAt;
         return o;
@@ -29,13 +30,14 @@
 
       function saveMonthOptions(markSaved) {
         if (!state.year || !state.month) return;
-        if (!state.optionsByMonth || typeof state.optionsByMonth !== 'object') state.optionsByMonth = {};
-        state.optionsByMonth[service.monthKey()] = service.snapshotMonthOptions(markSaved);
+        const entity = persistenceModule.ensureLocalMonthDraft(service.monthKey());
+        entity.options = service.snapshotMonthOptions(markSaved);
       }
 
       /** 从当月数据集恢复居住区域与旅居勾选；该月没有记录则用默认值 */
       function applyMonthOptions(key) {
-        const saved = state.optionsByMonth && state.optionsByMonth[key];
+        const entity = state.monthsByKey[key];
+        const saved = entity && entity.options;
         const opt = (saved && typeof saved === 'object') ? saved : service.defaultMonthOptions();
         state.region = opt.region === 'Overseas' ? 'Overseas' : 'Mainland';
         state.includeTravel = !!opt.includeTravel;
@@ -53,25 +55,8 @@
         service.updateTravelUiVisibility();
       }
 
-      function monthMapHasData(map, key) {
-        if (!map || typeof map !== 'object' || !Object.prototype.hasOwnProperty.call(map, key)) return false;
-        const value = map[key];
-        if (!value || typeof value !== 'object') return !!value;
-        return Object.keys(value).length > 0;
-      }
-
       function hasMonthData(key) {
-        const regularData = [
-          state.itineraryByMonth,
-          state.optionsByMonth,
-          state.overridesByMonth,
-          state.resultsByMonth,
-        ].some((map) => service.monthMapHasData(map, key));
-        const subscriptions = state.subscriptionsByMonth && state.subscriptionsByMonth[key];
-        return regularData || !!(subscriptions && (
-          (Array.isArray(subscriptions.items) && subscriptions.items.length)
-          || (Array.isArray(subscriptions.retiredIds) && subscriptions.retiredIds.length)
-        ));
+        return !!(state.monthsByKey && state.monthsByKey[key]);
       }
 
       function confirmMonthCreation(year, month) {
@@ -110,23 +95,9 @@
       async function calculate(options = {}) {
         const automatic = !!(options && options.automatic);
         if (state.busy) return false;
-
-        // 从发起请求的月份捕获完整计算上下文。等待后端响应期间用户可以切月，
-        // 结果必须仍归档到原月份，且不能覆盖新月份当前展示的结果/汇率。
-        const requestYear = state.year;
-        const requestMonth = state.month;
         const requestMonthKey = service.monthKey();
-        const requestRegion = state.region === 'Overseas' ? 'Overseas' : 'Mainland';
-        const requestIncludeTravel = !!state.includeTravel;
-        const requestTravelLocations = requestIncludeTravel ? travelModule.selectedTravelList() : [];
-        subscriptionsModule.syncCurrentMonth();
-        const requestStandards = standardsModule.activeStandardsOverride();
-        const itin = itineraryModule.currentItinerary();
-        const entries = Object.keys(itin)
-          .filter((loc) => itin[loc].length)
-          .map((loc) => ({ location: loc, ranges: itin[loc] }));
-
-        if (!entries.length) {
+        const entity = state.monthsByKey[requestMonthKey];
+        if (!entity || !Object.values(entity.itinerary || {}).some((ranges) => ranges.length)) {
           if (!automatic) {
             feedbackModule.toast('请先在「行程安排」中添加行程', 'warn');
             navigationModule.openBudgetTab('itinerary');
@@ -139,43 +110,29 @@
           feedbackModule.setLoading(true, '正在更新预算（需获取当月汇率，首次拉取可能需要数秒）…');
         }
         try {
-          const result = await apiModule.api('/api/calculate', {
+          // 计算只消费已落盘实体。先把本标签页修改写入同一 revision，随后后端
+          // 在取汇率结束时再次 CAS；计算期间的任何编辑都会使旧结果无法落盘。
+          const inputsSaved = await persistenceModule.persist('now');
+          if (!inputsSaved) throw new Error('月份输入尚未可靠保存，请检查冲突提示后重试');
+          const stored = state.monthsByKey[requestMonthKey];
+          const response = await apiModule.api(`/api/months/${encodeURIComponent(requestMonthKey)}/calculate`, {
             method: 'POST',
-            body: {
-              year: requestYear,
-              month: requestMonth,
-              region: requestRegion,
-              itinerary: entries,
-              // 发送当前页面的完整标准快照（含当月新建地点/币种元数据），
-              // 避免并发默认值变更改变本次计算输入。
-              standards_override: requestStandards,
-              include_travel: requestIncludeTravel,
-              travel_locations: requestTravelLocations,
-            },
+            body: { base_revision: stored.revision },
             timeout: 180000,
           });
-          const saved = await resultsModule.saveResult(result, 'now', {
-            monthKey: requestMonthKey,
-            region: requestRegion,
-            includeTravel: requestIncludeTravel,
-          }); // 先确认项目状态是否真正落盘
+          persistenceModule.acceptSavedMonth(response.month);
           if (service.monthKey() === requestMonthKey) {
+            state.calcResult = response.month.result;
             resultsModule.renderResult();
             if (!automatic) navigationModule.openBudgetTab('result');
           }
-          const stayedOnMonth = service.monthKey() === requestMonthKey;
-          const calculatedMonth = `${requestYear}年${sharedModule.pad2(requestMonth)}月`;
-          if (!automatic || !saved) {
-            feedbackModule.toast(
-              saved
-                ? (stayedOnMonth ? '预算已更新并保存' : `${calculatedMonth}预算已更新并保存`)
-                : (stayedOnMonth ? '预算已更新，但保存到服务器失败' : `${calculatedMonth}预算已更新，但保存到服务器失败`),
-              saved ? 'success' : 'warn',
-            );
-          }
+          if (!automatic) feedbackModule.toast('预算已按当前月份修订计算并保存', 'success');
           return true;
         } catch (err) {
-          feedbackModule.toast(automatic ? `自动更新月度预算失败：${err.message}` : err.message, 'error');
+          const message = err.code === 'STATE_CONFLICT'
+            ? '计算期间月份输入发生变化，旧结果未保存；请重新计算'
+            : err.message;
+          feedbackModule.toast(automatic ? `自动更新月度预算失败：${message}` : message, 'error');
           networkModule.maybeShowNetworkWarning(err.message); // 计算中的汇率拉取失败 → 同步提示 Yahoo 数据源请求失败
           return false;
         } finally {
@@ -195,7 +152,6 @@
         state.customLocations = [];
         state.customCurrencies = {};
         standardsModule.loadOverrides();                                  // 该月保存的标准修改（含自定义地点/币种）
-        subscriptionsModule.ensureMonth();
         subscriptionsModule.syncCurrentMonth();
         state.calcResult = resultsModule.loadResultForMonth(service.monthKey()); // 该月保存的计算结果
         standardsViewModule.renderStandards();
@@ -219,7 +175,7 @@
         navigationModule.refreshDashboard();
       }
 
-      function navigateToMonth(year, month) {
+      async function navigateToMonth(year, month) {
         if (year < 2000 || year > 2100) {
           feedbackModule.toast('超出支持年份范围（2000-2100）', 'warn');
           return false;
@@ -229,25 +185,30 @@
         const targetKey = `${year}-${sharedModule.pad2(month)}`;
         const createsMonth = !service.hasMonthData(targetKey);
         if (createsMonth && !service.confirmMonthCreation(year, month)) return false;
-        if (createsMonth) subscriptionsModule.unsuppressMonth(targetKey);
 
-        // 只有确认导航后才保存已有当前月；空白来源月也不能因离开而被自动创建。
+        // 只有用户确认后才调用显式 ensure；渲染和初始化永远不会创建月份。
         const sourceKey = service.monthKey();
         if (service.hasMonthData(sourceKey)) {
-          service.saveMonthOptions();
-          standardsModule.snapshotOverridesIntoState();
+          // 所有输入事件已即时进入实体并标记脏字段；切月只排空既有队列，
+          // 不因“离开页面”制造一个无业务变化的新 revision。
+          if (!(await persistenceModule.persist('now'))) return false;
+        }
+        if (createsMonth) {
+          try {
+            const ensured = await apiModule.api(`/api/months/${encodeURIComponent(targetKey)}/ensure`, {
+              method: 'POST', body: { defaults_revision: state.meta.defaults_revision }, timeout: 15000,
+            });
+            persistenceModule.acceptSavedMonth(ensured.month);
+          } catch (err) {
+            feedbackModule.toast(`新增月份失败：${err.message}`, 'error');
+            return false;
+          }
         }
         state.year = year;
         state.month = month;
         state.calSel = { start: null, end: null };
         service.switchMonthData();
-
-        if (createsMonth) {
-          // 用户已明确同意新增：建立默认计算选项与标准快照，之后才进入唯一持久化管线。
-          service.saveMonthOptions(true);
-          standardsModule.snapshotOverridesIntoState();
-        }
-        persistenceModule.persist('debounce');
+        persistenceModule.saveSelection(targetKey);
         return true;
       }
 
@@ -271,7 +232,6 @@
         saveMonthOptions,
         applyMonthOptions,
         syncOptionsUI,
-        monthMapHasData,
         hasMonthData,
         confirmMonthCreation,
         updateTravelUiVisibility,

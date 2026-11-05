@@ -1,4 +1,4 @@
-/* 当月标准快照、默认值合并及旧状态迁移。
+/* 当月完整标准快照的读取、编辑与渲染同步。
  * 跨模块调用由 web/js/app.js 显式注入；模块只导出本职责的接口。
  */
 (function register(registry) {
@@ -16,43 +16,6 @@
         state.monthStandardsSnapshot = false;
       }
 
-      /** 把仍可编辑的每日/旅居差异合并到默认标准，供状态迁移/固化使用。 */
-      function mergeStandardsInto(base, saved) {
-        const out = sharedModule.deepClone(base);
-        const incoming = saved && typeof saved === 'object' ? saved : {};
-        for (const cat of ['variable', 'travel']) {
-          for (const [group, values] of Object.entries(incoming[cat] || {})) {
-            if (!out[cat][group]) out[cat][group] = {};
-            for (const [curr, value] of Object.entries(values || {})) {
-              out[cat][group][curr] = (cat === 'travel' && value && typeof value === 'object')
-                ? { daily: Number(value.daily), once: Number(value.once) }
-                : Number(value);
-            }
-          }
-        }
-        return out;
-      }
-
-      function standardsSnapshot(defaults, saved) {
-        if (saved && saved._snapshot) return sharedModule.deepClone(saved);
-        const customs = saved && Array.isArray(saved.custom_locations) ? sharedModule.deepClone(saved.custom_locations) : [];
-        const locations = sharedModule.deepClone((state.meta && state.meta.locations) || []);
-        for (const loc of customs) {
-          if (!locations.some((item) => item.key === loc.key)) locations.push(sharedModule.deepClone(loc));
-        }
-        const merged = service.mergeStandardsInto(defaults, saved);
-        return {
-          _snapshot: true,
-          variable: merged.variable,
-          travel: merged.travel,
-          custom_locations: customs,
-          custom_currencies: sharedModule.deepClone(saved && saved.custom_currencies || {}),
-          _locations: locations,
-          _location_names: sharedModule.deepClone(state.meta && state.meta.location_names || {}),
-          _currency_names: sharedModule.deepClone(state.meta && state.meta.currency_names || {}),
-        };
-      }
-
       function currentStandardsSnapshot() {
         return {
           _snapshot: true,
@@ -66,55 +29,19 @@
         };
       }
 
-      function preserveExistingMonthsBeforeDefaultChange() {
-        const currentKey = monthlyModule.monthKey();
-        const keys = new Set([
-          ...Object.keys(state.itineraryByMonth || {}),
-          ...Object.keys(state.optionsByMonth || {}),
-          ...Object.keys(state.overridesByMonth || {}),
-          ...Object.keys(state.resultsByMonth || {}),
-        ]);
-        const map = service.loadOverridesMap();
-        for (const key of keys) {
-          if (key === currentKey) continue;
-          map[key] = service.standardsSnapshot(state.meta.default_standards, map[key]);
-        }
-        // 当月数值可能完全等于旧默认值，因而没有 overrides 记录。
-        // 必须直接固化当前内存值，否则默认值 POST 成功后异常退出，
-        // 下次加载会把新默认值误当作当月数值。
-        map[currentKey] = service.currentStandardsSnapshot();
-        state.overridesByMonth = map;
-        state.monthStandardsSnapshot = true;
-      }
-
-      function activeStandardsOverride() {
-        // 计算请求必须携带用户刚刚确认的完整标准快照。只发送相对默认值的差异，
-        // 会让另一标签页恰好保存的新默认值改变本页已经确认过的计算输入。
-        return {
-          ...service.currentStandardsSnapshot(),
-          fixed: sharedModule.deepClone(state.standards.fixed || {}),
-          extra: Object.fromEntries(sharedModule.EXTRA_CURRENCIES.map((currency) => [currency, 0])),
-        };
-      }
-
       /** 读取 overrides 的月份映射表 { 'YYYY-MM': {variable,fixed,travel} } */
       function loadOverridesMap() {
-        return state.overridesByMonth && typeof state.overridesByMonth === 'object'
-          ? state.overridesByMonth
-          : {};
+        return Object.fromEntries(Object.entries(state.monthsByKey || {})
+          .filter(([, entity]) => entity && entity.standards)
+          .map(([key, entity]) => [key, entity.standards]));
       }
 
       function snapshotOverridesIntoState() {
         if (!state.meta || !state.year || !state.month || !state.standards) return;
-        const map = service.loadOverridesMap();
         const key = monthlyModule.monthKey();
-        const existing = map[key];
-        // 删除当前月份时，空对象是发给后端的显式墓碑；不能在同一笔 persist 中复活它。
-        if (Object.prototype.hasOwnProperty.call(map, key)
-            && existing && typeof existing === 'object'
-            && !Object.keys(existing).length) return;
-        map[key] = service.currentStandardsSnapshot();
-        state.overridesByMonth = map;
+        const entity = state.monthsByKey[key];
+        if (!entity) return;
+        entity.standards = service.currentStandardsSnapshot();
         state.monthStandardsSnapshot = true;
       }
 
@@ -125,8 +52,8 @@
 
       /** 读取当前月份的预算标准修改并合并到默认标准 */
       function loadOverrides() {
-        const map = service.loadOverridesMap();
-        const monthOv = map[monthlyModule.monthKey()];
+        const entity = state.monthsByKey[monthlyModule.monthKey()];
+        const monthOv = entity && entity.standards;
         if (monthOv && typeof monthOv === 'object') {
           if (monthOv._snapshot) {
             state.monthLocations = sharedModule.deepClone(monthOv._locations || []);
@@ -220,11 +147,7 @@
 
       Object.assign(service, {
         resetStandardsToDefault,
-        mergeStandardsInto,
-        standardsSnapshot,
         currentStandardsSnapshot,
-        preserveExistingMonthsBeforeDefaultChange,
-        activeStandardsOverride,
         loadOverridesMap,
         snapshotOverridesIntoState,
         saveOverrides,

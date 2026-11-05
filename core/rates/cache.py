@@ -48,17 +48,17 @@ def _cached_rate_is_fresh(cached, end_date, rate_kind, ttl, now=None):
 
 
 def _get_historical_rates_cached(currencies, start_date, end_date, *, fetcher, rate_kind,
-                                 ttl=RATES_CACHE_DEFAULT_TTL, force=False):
+                                 ttl=RATES_CACHE_DEFAULT_TTL, force=False,
+                                 fetcher_kwargs=None):
     """共享的进程内汇率缓存，按 rate_kind 隔离月度派生值与年度 Close。"""
     result = {}
     to_fetch = []
     force_keys = [_rates_cache_key(curr, start_date, end_date, rate_kind) for curr in currencies]
     if force:
-        # 刷新一开始就隔离旧值；刷新失败后也不能让年度计算悄悄复用旧缓存。
-        # 计数让并发普通请求等待所有同 key 强制刷新结束。
+        # 强制刷新期间让普通请求等待，但在新数据成功前保留最后一个有效值。
+        # 刷新调用本身失败会明确报错；之后的普通读取仍可使用未过期旧值。
         with _RATES_CACHE_LOCK:
             for key in force_keys:
-                _RATES_CACHE.pop(key, None)
                 _RATES_CACHE_REFRESHING[key] = _RATES_CACHE_REFRESHING.get(key, 0) + 1
     for curr in currencies:
         key = _rates_cache_key(curr, start_date, end_date, rate_kind)
@@ -80,7 +80,9 @@ def _get_historical_rates_cached(currencies, start_date, end_date, *, fetcher, r
                     if _cached_rate_is_fresh(cached, end_date, rate_kind, ttl):
                         result[curr] = cached[1]
                         continue
-                series = fetcher([curr], start_date, end_date)[curr]
+                series = fetcher(
+                    [curr], start_date, end_date, **(fetcher_kwargs or {}),
+                )[curr]
                 with _RATES_CACHE_LOCK:
                     _RATES_CACHE[key] = (time.time(), series)
                 result[curr] = series
@@ -96,7 +98,8 @@ def _get_historical_rates_cached(currencies, start_date, end_date, *, fetcher, r
     return result
 
 
-def get_historical_rates_cached(currencies, start_date, end_date, ttl=RATES_CACHE_DEFAULT_TTL, force=False):
+def get_historical_rates_cached(currencies, start_date, end_date, *, as_of,
+                                ttl=RATES_CACHE_DEFAULT_TTL, force=False):
     """带进程内缓存的月度汇率获取（供 Web 接口复用）。
 
     返回 {currency: pd.Series}。线程安全：同一 (币种, 起止) 并发只下载一次，
@@ -106,6 +109,7 @@ def get_historical_rates_cached(currencies, start_date, end_date, ttl=RATES_CACH
     return _get_historical_rates_cached(
         currencies, start_date, end_date,
         fetcher=get_historical_rates, rate_kind="monthly", ttl=ttl, force=force,
+        fetcher_kwargs={"as_of": as_of},
     )
 
 

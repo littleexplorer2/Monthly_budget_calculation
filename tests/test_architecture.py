@@ -68,7 +68,8 @@ class ProductionArchitectureTests(unittest.TestCase):
                 "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
                 "http_version": "1.1", "method": "GET", "scheme": "http",
                 "path": path, "raw_path": path.encode("utf-8"),
-                "query_string": b"", "root_path": "", "headers": [],
+                "query_string": b"", "root_path": "",
+                "headers": [(b"host", b"127.0.0.1:8123")],
                 "client": ("127.0.0.1", 1234), "server": ("127.0.0.1", 8123),
             }, receive, send)
             start = next(message for message in messages if message["type"] == "http.response.start")

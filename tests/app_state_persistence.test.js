@@ -45,63 +45,86 @@ function loadAppForTest() {
   loadFrontend(context);
   vm.runInContext(`
     const modules = window.BudgetApp.modules;
-
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const monthEntity = (month, revision = 1) => ({
+      schemaVersion: 2,
+      month,
+      revision,
+      updatedAt: '2026-09-01T00:00:00Z',
+      itinerary: { Shenzhen: [{ start: month + '-01', end: month + '-02' }] },
+      options: { region: 'Mainland', includeTravel: false, travelSelected: null },
+      standards: {
+        _snapshot: true,
+        variable: { Shenzhen: { CNY: 85 } },
+        travel: {},
+        custom_locations: [], custom_currencies: {},
+        _locations: [{ key: 'Shenzhen', name: '深圳', category: 'variable', currency: 'CNY' }],
+        _location_names: { Shenzhen: '深圳' }, _currency_names: { CNY: '人民币' },
+      },
+      subscriptions: { items: [], retiredIds: [] },
+      result: null,
+    });
 
     globalThis.testApi = {
-      deleteMonth: modules.data.deleteMonthData,
-      flush: modules.persistence.flushPersist,
-      unregister: modules.lifecycle.unregisterTab,
-      heartbeat: modules.lifecycle.heartbeatTab,
-      uploadAll: modules.data.uploadAllData,
-      seed(month) {
-        modules.persistence.runtime.serverStateReady = true;
+      seed(month = '2026-09', revision = 1) {
+        const entity = monthEntity(month, revision);
         modules.state.state.meta = {
-          default_standards: { variable: {}, fixed: {}, travel: {}, extra: {} },
-          locations: [],
-          location_names: {},
-          currency_names: {},
+          default_standards: { variable: { Shenzhen: { CNY: 85 } }, fixed: {}, travel: {}, extra: {} },
+          default_subscriptions: [], default_subscriptions_configured: true,
+          locations: entity.standards._locations,
+          location_names: entity.standards._location_names,
+          currency_names: entity.standards._currency_names,
         };
         modules.state.state.year = 2026;
         modules.state.state.month = 9;
-        modules.state.state.itineraryByMonth = { [month]: { Shenzhen: [{ start: month + '-01', end: month + '-02' }] } };
-        modules.state.state.optionsByMonth = { [month]: { region: 'Mainland' } };
-        modules.state.state.overridesByMonth = { [month]: { fixed: { Mainland: { CNY: 1 } } } };
-        modules.state.state.resultsByMonth = { [month]: { summary: { total: 1 } } };
+        modules.state.state.monthsByKey = { [month]: clone(entity) };
+        modules.state.state.globalRevision = 1;
+        modules.state.state.annualBudgetsByYear = {};
+        modules.state.state.annualResultsByYear = {};
+        modules.state.state.assetPortfoliosById = {};
+        modules.persistence.runtime.serverMonthBaselines = { [month]: clone(entity) };
+        modules.persistence.runtime.globalBaseline = {
+          schemaVersion: 2, revision: 1, selectedMonth: month,
+          annualBudgetsByYear: {}, annualResultsByYear: {}, assetPortfoliosById: {},
+        };
+        modules.persistence.runtime.serverStateReady = true;
+        modules.persistence.runtime.dirtyMonthFields = Object.create(null);
+        modules.persistence.runtime.dirtyGlobalFields = new Set();
+        return clone(entity);
       },
+      entity(month = '2026-09') { return modules.state.state.monthsByKey[month]; },
+      baseline(month = '2026-09') { return modules.persistence.runtime.serverMonthBaselines[month]; },
+      dirty(month = '2026-09') {
+        return Array.from(modules.persistence.runtime.dirtyMonthFields[month] || []);
+      },
+      mark(field, month = '2026-09') { modules.persistence.markMonthDirty(field, month); },
+      markGlobal(field) { modules.persistence.markGlobalDirty(field); },
+      flush: modules.persistence.flushPersist,
+      persist: modules.persistence.persist,
+      ensureDraft: modules.persistence.ensureLocalMonthDraft,
+      snapshot: modules.persistence.snapshotBundle,
+      applyOffline: modules.persistence.applyOfflineBundle,
+      finalBundle: modules.persistence.finalWriteBundle,
+      deleteMonth: modules.persistence.deleteMonth,
+      saveSelection: modules.persistence.saveSelection,
+      unregister: modules.lifecycle.unregisterTab,
+      register: modules.lifecycle.registerTab,
+      runtime: modules.persistence.runtime,
+      state: modules.state.state,
       setApi(mock) {
         modules.http.api = mock;
-        modules.data.openDataManager = async () => {};
         modules.feedback.toast = () => {};
       },
-      setBeacon(mock) {
-        navigator.sendBeacon = mock;
+      setBeacon(mock) { navigator.sendBeacon = mock; },
+      poisonQueue() {
+        modules.persistence.runtime.persistChain = Promise.reject(new Error('queue setup failed'));
+        modules.persistence.runtime.persistChain.catch(() => {});
       },
-      setServerBaseline(bundle) {
-        modules.persistence.runtime.serverBaseline = JSON.parse(JSON.stringify(bundle));
-        modules.persistence.runtime.serverStateReady = true;
-      },
-      touchMonthlyState() {
-        modules.persistence.persist('debounce');
-      },
-      markServerReadFailed() {
-        modules.persistence.runtime.serverStateReady = false;
-        modules.persistence.runtime.serverBaseline = null;
-      },
-      isServerStateReady() {
-        return modules.persistence.runtime.serverStateReady;
-      },
-      setResultTotal(month, total) {
-        modules.state.state.resultsByMonth[month].summary.total = total;
-      },
-      buildWrite(bundle) {
-        return modules.persistence.buildStateWrite(bundle);
-      },
-      applyBundle: modules.persistence.applyBundle,
-      snapshot: modules.persistence.snapshotBundle,
     };
   `, context);
   return {
     ...context.testApi,
+    storage,
     keepaliveCalls,
     dispatchWindow(type, event = {}) {
       for (const handler of windowListeners.get(type) || []) handler(event);
@@ -109,357 +132,188 @@ function loadAppForTest() {
   };
 }
 
-test('deleting February waits for queued writes and removes local tombstones', async () => {
+test('revision=0 draft is explicitly ensured before the first entity PUT', async () => {
   const app = loadAppForTest();
-  const month = '2026-02';
-  const stateWrites = [];
-  let releaseFirstWrite;
-  const firstWrite = new Promise((resolve) => { releaseFirstWrite = resolve; });
-
-  app.seed(month);
-  app.setApi(async (url, options = {}) => {
-    if (url === '/api/state') {
-      stateWrites.push(JSON.parse(JSON.stringify(options.body)));
-      if (stateWrites.length === 1) await firstWrite;
-      return {};
-    }
-    if (url === '/api/data/rates/delete') return { removed: [month], months: [] };
-    return {};
-  });
-
-  const queuedWrite = app.flush();
-  let deletionFinished = false;
-  const deletion = app.deleteMonth(month).then(() => { deletionFinished = true; });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(deletionFinished, false, 'delete must wait for the earlier state write');
-
-  releaseFirstWrite();
-  await Promise.all([queuedWrite, deletion]);
-
-  const snapshot = JSON.parse(JSON.stringify(app.snapshot()));
-  for (const field of ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth']) {
-    assert.equal(month in snapshot[field], false, `${field} retained an empty February tombstone`);
-    assert.deepEqual(stateWrites.at(-1)[field][month], {}, `${field} did not send a deletion tombstone`);
-  }
-});
-
-test('upload saves the latest state before requesting the remote push', async () => {
-  const app = loadAppForTest();
+  app.seed();
+  delete app.state.monthsByKey['2026-09'];
+  delete app.runtime.serverMonthBaselines['2026-09'];
+  const draft = app.ensureDraft('2026-09');
+  draft.itinerary = { Shenzhen: [{ start: '2026-09-03', end: '2026-09-04' }] };
+  app.mark('itinerary');
   const calls = [];
-  app.seed('2026-02');
   app.setApi(async (url, options = {}) => {
     calls.push({ url, options });
-    if (url === '/api/data/upload') {
-      return { remote: 'origin', branch: 'main', commit: 'abc1234', message: '数据已提交并上传' };
+    if (url.endsWith('/ensure')) return { created: true, month: { ...draft, revision: 1 } };
+    if (url === '/api/months/2026-09' && options.method === 'PUT') {
+      return { ...draft, revision: 2, ...options.body.data };
     }
-    return {};
+    throw new Error(`unexpected ${url}`);
   });
 
-  await app.uploadAll();
-  assert.deepEqual(calls.map((call) => call.url), ['/api/state', '/api/data/upload']);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(calls[1].options.body)),
-    { user_confirmed: true },
-  );
-});
-
-test('closing the page sends one complete state snapshot with unregister', async () => {
-  const app = loadAppForTest();
-  const month = '2026-02';
-  let beaconPayload;
-  app.seed(month);
-  app.touchMonthlyState();
-  app.setBeacon((url, blob) => {
-    beaconPayload = blob.text().then((text) => ({ url, body: JSON.parse(text) }));
-    return true;
-  });
-
-  app.unregister();
-  const sent = await beaconPayload;
-  assert.equal(sent.url, '/api/tabs/unregister');
-  assert.equal(sent.body.tab_id, 'test-tab');
-  for (const field of ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth']) {
-    assert.equal(month in sent.body.state[field], true, `${field} missing from final snapshot`);
-  }
-});
-
-test('heartbeat refreshes the server lease when Safari loses the close event', async () => {
-  const app = loadAppForTest();
-  const calls = [];
-  app.seed('2026-02');
-  app.setApi(async (url, options = {}) => {
-    calls.push([url, options]);
-    return { open_tabs: 1 };
-  });
-
-  await app.heartbeat();
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], '/api/tabs/heartbeat');
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(calls[0][1].body)),
-    { tab_id: 'test-tab' },
-  );
-});
-
-test('sendBeacon refusal falls back to a keepalive unregister request', async () => {
-  const app = loadAppForTest();
-  app.seed('2026-02');
-  app.touchMonthlyState();
-  app.setBeacon(() => false);
-
-  app.unregister();
-  await new Promise((resolve) => setImmediate(resolve));
-
-  const unregisterCalls = app.keepaliveCalls.filter(([url]) => url === '/api/tabs/unregister');
-  assert.equal(unregisterCalls.length, 1, JSON.stringify(app.keepaliveCalls.map(([url]) => url)));
-  const [url, options] = unregisterCalls[0];
-  assert.equal(url, '/api/tabs/unregister');
-  assert.equal(options.keepalive, true);
-  assert.equal(JSON.parse(options.body).tab_id, 'test-tab');
-});
-
-test('sendBeacon exception also falls back to keepalive fetch', async () => {
-  const app = loadAppForTest();
-  app.seed('2026-02');
-  app.touchMonthlyState();
-  app.setBeacon(() => { throw new Error('beacon queue unavailable'); });
-
-  app.unregister();
-  await new Promise((resolve) => setImmediate(resolve));
-
-  const unregisterCalls = app.keepaliveCalls.filter(([url]) => url === '/api/tabs/unregister');
-  assert.equal(unregisterCalls.length, 1);
-  assert.equal(unregisterCalls[0][1].keepalive, true);
-});
-
-test('bfcache pagehide keeps the tab registered and writable', async () => {
-  const app = loadAppForTest();
-  let beacons = 0;
-  const calls = [];
-  app.seed('2026-02');
-  app.setServerBaseline(JSON.parse(JSON.stringify(app.snapshot())));
-  app.setBeacon(() => { beacons += 1; return true; });
-  app.setApi(async (url) => {
-    calls.push(url);
-    return app.snapshot();
-  });
-
-  app.dispatchWindow('pagehide', { persisted: true });
-  app.dispatchWindow('pageshow', { persisted: true });
-  assert.equal(beacons, 0, '进入 bfcache 时不得注销最后一个标签页');
-  assert.equal(await app.flush(), true, '从 bfcache 返回后仍应保持可写');
-  assert.deepEqual(calls, ['/api/state']);
-});
-
-test('failed server state read never writes stale local cache back to the server', async () => {
-  const app = loadAppForTest();
-  const calls = [];
-  let beaconPayload;
-  app.seed('2026-02');
-  app.markServerReadFailed();
-  app.setApi(async (url) => {
-    calls.push(url);
-    return {};
-  });
-  app.setBeacon((url, blob) => {
-    beaconPayload = blob.text().then((text) => ({ url, body: JSON.parse(text) }));
-    return true;
-  });
-
-  assert.equal(await app.flush(), false);
-  assert.deepEqual(calls, [], '无可信服务器基线时不得 PUT 旧 localStorage 快照');
-
-  app.unregister();
-  const sent = await beaconPayload;
-  assert.equal(sent.url, '/api/tabs/unregister');
-  assert.deepEqual(sent.body, { tab_id: 'test-tab' },
-    '关闭页只注销标签，不得附带无基线的旧状态');
-});
-
-test('state persistence starts locked until the initial server read is trusted', () => {
-  const app = loadAppForTest();
-  assert.equal(app.isServerStateReady(), false);
-});
-
-test('an unchanged stale tab omits month keys while an edit carries its compare baseline', () => {
-  const app = loadAppForTest();
-  const month = '2026-02';
-  app.seed(month);
-  const baseline = JSON.parse(JSON.stringify(app.snapshot()));
-  app.setServerBaseline(baseline);
-
-  const unchanged = app.buildWrite(app.snapshot()).payload;
-  for (const field of ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth']) {
-    assert.equal(field in unchanged, false,
-      `unchanged stale tab must not resend ${field} and resurrect another tab's deletion`);
-  }
-
-  const edited = JSON.parse(JSON.stringify(app.snapshot()));
-  edited.resultsByMonth[month].summary.total = 2;
-  const write = app.buildWrite(edited).payload;
-  assert.equal(write.resultsByMonth[month].summary.total, 2);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(write.baseValues.resultsByMonth[month])),
-    { exists: true, value: baseline.resultsByMonth[month] },
-    'same-key edits must include the old value for an atomic server conflict check',
-  );
-
-  const nextMonth = JSON.parse(JSON.stringify(app.snapshot()));
-  nextMonth.month = 10;
-  const selectionWrite = app.buildWrite(nextMonth).payload;
-  assert.equal(selectionWrite.year, 2026, 'year/month selection must be submitted atomically');
-  assert.equal(selectionWrite.month, 10);
-  assert.ok(selectionWrite.baseValues.year);
-  assert.ok(selectionWrite.baseValues.month);
-});
-
-test('loading more than 60 server months never turns local cache trimming into deletion tombstones', async () => {
-  const app = loadAppForTest();
-  const months = Array.from({ length: 61 }, (_, index) => {
-    const year = 2021 + Math.floor(index / 12);
-    const month = (index % 12) + 1;
-    return `${year}-${String(month).padStart(2, '0')}`;
-  });
-  const current = months.at(-1);
-  const bundle = {
-    version: 1,
-    updatedAt: '2026-01-01T00:00:00Z',
-    year: Number(current.slice(0, 4)),
-    month: Number(current.slice(5, 7)),
-    itineraryByMonth: {},
-    optionsByMonth: {},
-    overridesByMonth: {},
-    resultsByMonth: {},
-    annualBudgetsByYear: {},
-    annualResultsByYear: {},
-  };
-  for (const month of months) {
-    bundle.itineraryByMonth[month] = {
-      Shenzhen: [{ start: `${month}-01`, end: `${month}-02` }],
-    };
-    bundle.optionsByMonth[month] = { region: 'Mainland' };
-  }
-  bundle.resultsByMonth[current] = { summary: { total: 1 } };
-
-  const stateWrites = [];
-  app.setApi(async (url, options = {}) => {
-    if (url === '/api/state') stateWrites.push(JSON.parse(JSON.stringify(options.body)));
-    return {};
-  });
-  app.setServerBaseline(bundle);
-  app.applyBundle(bundle);
-
-  const loaded = JSON.parse(JSON.stringify(app.snapshot()));
-  assert.equal(Object.keys(loaded.itineraryByMonth).length, 61);
-  assert.equal(Object.keys(loaded.optionsByMonth).length, 61);
-
-  app.setResultTotal(current, 2);
   assert.equal(await app.flush(), true);
-  assert.equal(stateWrites.length, 1);
-  assert.equal('itineraryByMonth' in stateWrites[0], false,
-    'localStorage 容量限制不得为服务器旧行程生成删除墓碑');
-  assert.equal('optionsByMonth' in stateWrites[0], false,
-    'localStorage 容量限制不得为服务器旧选项生成删除墓碑');
-  assert.equal(stateWrites[0].resultsByMonth[current].summary.total, 2);
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/api/months/2026-09/ensure', '/api/months/2026-09',
+  ]);
+  assert.equal(calls[1].options.body.base_revision, 1);
+  assert.equal(app.entity().revision, 2);
+  assert.equal(JSON.stringify(app.dirty()), '[]');
 });
 
-test('final unregister write accepts the target of this tab pending PUT as an alternate base', async () => {
+test('whole-entity CAS automatically merges non-overlapping field updates and retries', async () => {
   const app = loadAppForTest();
-  const month = '2026-02';
-  app.seed(month);
-  app.setServerBaseline(JSON.parse(JSON.stringify(app.snapshot())));
-  let releaseWrite;
-  const pending = new Promise((resolve) => { releaseWrite = resolve; });
-  app.setApi(async (url) => {
-    if (url === '/api/state') await pending;
-    return {};
-  });
-
-  app.setResultTotal(month, 2);
-  const firstWrite = app.flush();
-  await new Promise((resolve) => setImmediate(resolve));
-  app.setResultTotal(month, 3);
-
-  let beaconPayload;
-  app.setBeacon((url, blob) => {
-    beaconPayload = blob.text().then((text) => ({ url, body: JSON.parse(text) }));
-    return true;
-  });
-  app.unregister();
-  const sent = await beaconPayload;
-  const marker = sent.body.state.baseValues.resultsByMonth[month];
-  assert.equal(sent.body.state.resultsByMonth[month].summary.total, 3);
-  assert.deepEqual(marker.alternatives.map((item) => item.value.summary.total), [2],
-    'final beacon must accept the pending write target, not only the older server baseline');
-
-  releaseWrite();
-  await firstWrite;
-});
-
-test('final unregister keeps a user rollback while a prior write is active and uses a newer sequence', async () => {
-  const app = loadAppForTest();
-  const month = '2026-09';
-  app.seed(month);
-  app.setServerBaseline(JSON.parse(JSON.stringify(app.snapshot())));
-  let releaseWrite;
-  const pending = new Promise((resolve) => { releaseWrite = resolve; });
-  const stateWrites = [];
+  const original = app.seed();
+  app.entity().itinerary.Shenzhen[0].end = '2026-09-03';
+  app.mark('itinerary');
+  const latest = { ...original, revision: 2, options: { ...original.options, region: 'Overseas' } };
+  let putCount = 0;
   app.setApi(async (url, options = {}) => {
-    if (url === '/api/state') {
-      stateWrites.push(JSON.parse(JSON.stringify(options.body)));
-      await pending;
+    if (url === '/api/months/2026-09' && options.method === 'PUT') {
+      putCount += 1;
+      if (putCount === 1) {
+        const error = new Error('conflict'); error.code = 'STATE_CONFLICT'; throw error;
+      }
+      return { ...latest, ...options.body.data, revision: 3 };
     }
-    return {};
+    if (url === '/api/months/2026-09') return latest;
+    throw new Error(`unexpected ${url}`);
   });
 
-  // 服务器基线和用户最终值都是 X=1；在途请求先尝试写成 A=2。
-  app.setResultTotal(month, 2);
-  const activeWrite = app.flush();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(stateWrites.length, 1);
-  const activeSequence = stateWrites[0].sequence;
-  app.setResultTotal(month, 1);
-
-  let beaconPayload;
-  app.setBeacon((url, blob) => {
-    beaconPayload = blob.text().then((text) => JSON.parse(text));
-    return true;
-  });
-  app.unregister();
-  const sent = await beaconPayload;
-
-  assert.equal(sent.state.resultsByMonth[month].summary.total, 1,
-    '最终 beacon 必须显式带回用户回退后的 X，不能让在途 A 获胜');
-  assert.ok(sent.state.sequence > activeSequence,
-    '最终 beacon 的标签内序列必须高于在途 PUT');
-  const alternatives = sent.state.baseValues.resultsByMonth[month].alternatives || [];
-  assert.deepEqual(alternatives.map((item) => item.value.summary.total), [2],
-    '最终写入应允许在途请求的 A 作为合法前置状态');
-
-  releaseWrite();
-  await activeWrite;
+  assert.equal(await app.flush(), true);
+  assert.equal(putCount, 2);
+  assert.equal(app.entity().options.region, 'Overseas');
+  assert.equal(app.entity().itinerary.Shenzhen[0].end, '2026-09-03');
 });
 
-test('a write with an uncertain response remains an alternate base for final unregister', async () => {
+test('same-field conflict keeps local edits dirty and never overwrites the newer server entity', async () => {
   const app = loadAppForTest();
-  const month = '2026-02';
-  app.seed(month);
-  app.setServerBaseline(JSON.parse(JSON.stringify(app.snapshot())));
-  app.setApi(async () => { throw new Error('response lost after request may have committed'); });
+  const original = app.seed();
+  app.entity().options.region = 'Overseas';
+  app.mark('options');
+  const latest = { ...original, revision: 2, options: { ...original.options, includeTravel: true } };
+  app.setApi(async (url, options = {}) => {
+    if (options.method === 'PUT') { const error = new Error('conflict'); error.code = 'STATE_CONFLICT'; throw error; }
+    return latest;
+  });
 
-  app.setResultTotal(month, 2);
   assert.equal(await app.flush(), false);
-  app.setResultTotal(month, 3);
-  let beaconPayload;
-  app.setBeacon((url, blob) => {
-    beaconPayload = blob.text().then((text) => JSON.parse(text));
+  assert.equal(app.entity().options.region, 'Overseas');
+  assert.equal(app.entity().options.includeTravel, false, '冲突字段保留本机完整值供用户核对');
+  assert.equal(JSON.stringify(app.dirty()), '["options"]');
+  assert.equal(app.baseline().options.includeTravel, true);
+});
+
+test('annual and asset writes use only global.json and carry its business revision', async () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.state.annualBudgetsByYear = { 2026: { USD: 100 } };
+  app.markGlobal('annualBudgetsByYear');
+  const calls = [];
+  app.setApi(async (url, options = {}) => {
+    calls.push({ url, options });
+    return {
+      schemaVersion: 2, revision: 2, selectedMonth: '2026-09',
+      annualBudgetsByYear: options.body.data.annualBudgetsByYear,
+      annualResultsByYear: {}, assetPortfoliosById: {},
+    };
+  });
+
+  assert.equal(await app.flush(), true);
+  assert.deepEqual(calls.map((call) => call.url), ['/api/global']);
+  assert.equal(calls[0].options.body.base_revision, 1);
+  assert.equal('months' in calls[0].options.body.data, false);
+});
+
+test('month selection is a separate last-write-wins request', async () => {
+  const app = loadAppForTest();
+  app.seed();
+  const calls = [];
+  app.setApi(async (url, options = {}) => {
+    calls.push({ url, options });
+    return { revision: 1, selectedMonth: options.body.month };
+  });
+  assert.equal(await app.saveSelection('2026-10'), true);
+  assert.deepEqual(calls.map((call) => call.url), ['/api/global/selection']);
+  assert.equal(JSON.stringify(calls[0].options.body), JSON.stringify({ month: '2026-10' }));
+});
+
+test('delete sends the entity revision before removing local state', async () => {
+  const app = loadAppForTest();
+  app.seed('2026-02', 7);
+  const calls = [];
+  app.setApi(async (url, options = {}) => {
+    calls.push({ url, options });
+    return { deleted: true };
+  });
+  assert.equal(await app.deleteMonth('2026-02'), true);
+  assert.equal(calls[0].url, '/api/months/2026-02');
+  assert.equal(calls[0].options.method, 'DELETE');
+  assert.equal(calls[0].options.body.base_revision, 7);
+  assert.equal(app.state.monthsByKey['2026-02'], undefined);
+});
+
+test('unregister sends only dirty v2 entities; oversized payload keeps the service alive', () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.entity().result = { summary: { total: 1 }, auditNote: 'x'.repeat(70000) };
+  app.mark('result');
+  let beaconBody = null;
+  app.setBeacon((_url, blob) => {
+    beaconBody = blob;
     return true;
   });
   app.unregister();
+  assert.ok(beaconBody);
+  return beaconBody.text().then((text) => {
+    const payload = JSON.parse(text);
+    assert.equal(payload.tab_id, 'test-tab');
+    assert.equal(payload.state, undefined);
+    assert.equal(payload.state_omitted, true);
+    assert.equal(app.storage.has('budget-web-state-v2'), true);
+  });
+});
 
-  const sent = await beaconPayload;
-  const marker = sent.state.baseValues.resultsByMonth[month];
-  assert.deepEqual(marker.alternatives.map((item) => item.value.summary.total), [2]);
-  assert.equal(sent.state.resultsByMonth[month].summary.total, 3);
+test('ordinary unregister carries a revision-guarded entity bundle', () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.entity().options.region = 'Overseas';
+  app.mark('options');
+  let beaconBody = null;
+  app.setBeacon((_url, blob) => { beaconBody = blob; return true; });
+  app.unregister();
+  return beaconBody.text().then((text) => {
+    const payload = JSON.parse(text);
+    assert.equal(payload.state.schemaVersion, 2);
+    assert.equal(payload.state.months.length, 1);
+    assert.equal(payload.state.months[0].base_revision, 1);
+    assert.equal(payload.state.months[0].data.options.region, 'Overseas');
+  });
+});
+
+test('bfcache pagehide leaves the tab registered and later edits remain writable', async () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.register();
+  app.dispatchWindow('pagehide', { persisted: true });
+  app.entity().options.region = 'Overseas';
+  app.mark('options');
+  let writes = 0;
+  app.setApi(async (_url, options = {}) => {
+    if (options.method === 'PUT') writes += 1;
+    return { ...app.entity(), revision: 2 };
+  });
+  assert.equal(await app.flush(), true);
+  assert.equal(writes, 1);
+});
+
+test('a rejected persist chain is normalized so later writes are not poisoned', async () => {
+  const app = loadAppForTest();
+  app.seed();
+  app.entity().options.region = 'Overseas';
+  app.mark('options');
+  app.poisonQueue();
+  app.setApi(async (_url, options = {}) => ({ ...app.entity(), ...options.body.data, revision: 2 }));
+  const first = app.persist('now');
+  await assert.rejects(first, /queue setup failed/);
+  // persist() always replaces the public queue with a settled continuation.
+  assert.equal(await app.persist('now'), true);
 });

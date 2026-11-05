@@ -29,8 +29,8 @@ class MonthlyRateFallbackTests(unittest.TestCase):
             )
 
         self.assertEqual(fetch.call_args_list, [
-            mock.call(["CNY", "USD"], "2026-11-01", "2026-11-30"),
-            mock.call(["CNY", "USD"], "2026-10-01", "2026-10-31"),
+            mock.call(["CNY", "USD"], "2026-11-01", "2026-11-30", as_of=dt.date(2026, 11, 1)),
+            mock.call(["CNY", "USD"], "2026-10-01", "2026-10-31", as_of=dt.date(2026, 11, 1)),
         ])
         self.assertEqual(len(rates["USD"]), 30)
         self.assertTrue((rates["USD"] == 8.0).all())
@@ -50,7 +50,9 @@ class MonthlyRateFallbackTests(unittest.TestCase):
 
         self.assertIs(rates, current)
         self.assertFalse(source["fallback"])
-        fetch.assert_called_once_with(["USD"], "2026-11-01", "2026-11-30")
+        fetch.assert_called_once_with(
+            ["USD"], "2026-11-01", "2026-11-30", as_of=dt.date(2026, 11, 1),
+        )
 
     def test_january_fallback_reads_previous_december(self):
         previous = {"USD": self.series([7.0], start="2026-12-31")}
@@ -66,7 +68,7 @@ class MonthlyRateFallbackTests(unittest.TestCase):
             )
 
         self.assertEqual(fetch.call_args_list[1], mock.call(
-            ["USD"], "2026-12-01", "2026-12-31",
+            ["USD"], "2026-12-01", "2026-12-31", as_of=dt.date(2027, 1, 1),
         ))
         self.assertEqual(len(rates["USD"]), 31)
         self.assertEqual(source["source_month"], "2026-12")

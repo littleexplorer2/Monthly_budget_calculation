@@ -1,16 +1,17 @@
-"""唯一状态持久化、兼容迁移与并发冲突处理。"""
+"""v1 归档解析与迁移辅助。
+
+生产 HTTP/前端不再有旧聚合写管线；v2 运行时入口只在
+``application.state.v2``。这里仅保留 v1 迁移解析及 v2 子文档复用的严格规范化函数。
+"""
 
 from __future__ import annotations
 
 import datetime as dt
-import json
 import math
 import re
 import threading
 from application import config as app_config
 from application import contracts as app_contracts
-from application import defaults as app_defaults
-from core import storage
 
 
 APP_STATE_FILE = app_config.BASE_DIR / "data" / "app-state.json"
@@ -18,10 +19,6 @@ APP_STATE_FILE = app_config.BASE_DIR / "data" / "app-state.json"
 
 
 _state_disk_lock = threading.RLock()
-
-
-
-_state_write_sequences: dict[str, int] = {}
 
 
 
@@ -47,11 +44,12 @@ def _compact_results_map(results: dict) -> dict:
     """去掉汇率明细，避免 app-state.json 过大、Safari 也无法用 localStorage 扛住。"""
     out = {}
     if not isinstance(results, dict):
-        return out
-    for key, val in results.items():
+        raise ValueError("resultsByMonth 必须是对象")
+    for raw_key, val in results.items():
+        key = _month_state_key(raw_key, "resultsByMonth")
         if not isinstance(val, dict):
-            continue
-        out[str(key)] = {k: v for k, v in val.items() if k not in ("rates", "rates_dict")}
+            raise ValueError(f"resultsByMonth.{key} 必须是对象")
+        out[key] = {k: v for k, v in val.items() if k not in ("rates", "rates_dict")}
     return out
 
 
@@ -458,20 +456,6 @@ def _normalize_asset_portfolios(raw: dict | None) -> dict:
     return out
 
 
-def _has_legacy_fixed_overrides(raw: dict | None) -> bool:
-    """旧月份里手工固定/额外预算已由订阅月均汇总取代。"""
-    if not isinstance(raw, dict):
-        return False
-    overrides = raw.get("overridesByMonth")
-    if not isinstance(overrides, dict):
-        return False
-    return any(
-        isinstance(snapshot, dict)
-        and bool(_LEGACY_FIXED_OVERRIDE_FIELDS.intersection(snapshot))
-        for snapshot in overrides.values()
-    )
-
-
 def _normalize_overrides(raw: dict | None) -> dict:
     """兼容读取旧月度快照，但不再让旧固定/额外预算进入运行时。"""
     if raw is None:
@@ -479,14 +463,14 @@ def _normalize_overrides(raw: dict | None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("app-state.overridesByMonth 必须是对象")
     out = {}
-    for month, snapshot in raw.items():
+    for raw_month, snapshot in raw.items():
+        month = _month_state_key(raw_month, "overridesByMonth")
         if not isinstance(snapshot, dict):
-            out[str(month)] = snapshot
-            continue
+            raise ValueError(f"overridesByMonth.{month} 必须是对象")
         clean = dict(snapshot)
         for field in _LEGACY_FIXED_OVERRIDE_FIELDS:
             clean.pop(field, None)
-        out[str(month)] = clean
+        out[month] = clean
     return out
 
 
@@ -519,14 +503,21 @@ def _normalize_app_state(raw: dict | None) -> dict:
     itin_in = raw.get("itineraryByMonth")
     if isinstance(itin_in, dict):
         cleaned = {}
-        for month, month_itin in itin_in.items():
-            cleaned[str(month)] = _exclusive_itinerary_month(
-                month_itin if isinstance(month_itin, dict) else {}
-            )
+        for raw_month, month_itin in itin_in.items():
+            month = _month_state_key(raw_month, "itineraryByMonth")
+            if not isinstance(month_itin, dict):
+                raise ValueError(f"itineraryByMonth.{month} 必须是对象")
+            cleaned[month] = _exclusive_itinerary_month(month_itin)
         state["itineraryByMonth"] = cleaned
     val = raw.get("optionsByMonth")
     if isinstance(val, dict):
-        state["optionsByMonth"] = val
+        options = {}
+        for raw_month, month_options in val.items():
+            month = _month_state_key(raw_month, "optionsByMonth")
+            if not isinstance(month_options, dict):
+                raise ValueError(f"optionsByMonth.{month} 必须是对象")
+            options[month] = dict(month_options)
+        state["optionsByMonth"] = options
     state["overridesByMonth"] = _normalize_overrides(raw.get("overridesByMonth"))
     state["resultsByMonth"] = _compact_results_map(raw.get("resultsByMonth") or {})
     state["subscriptionsByMonth"] = _normalize_subscriptions(raw.get("subscriptionsByMonth"))
@@ -534,20 +525,6 @@ def _normalize_app_state(raw: dict | None) -> dict:
     state["annualResultsByYear"] = _compact_annual_results(raw.get("annualResultsByYear"))
     state["assetPortfoliosById"] = _normalize_asset_portfolios(raw.get("assetPortfoliosById"))
     return state
-
-
-
-def _itinerary_range_count(itinerary: dict | None) -> int:
-    n = 0
-    if not isinstance(itinerary, dict):
-        return 0
-    for loc_ranges in itinerary.values():
-        if not isinstance(loc_ranges, dict):
-            continue
-        for ranges in loc_ranges.values():
-            if isinstance(ranges, list):
-                n += len(ranges)
-    return n
 
 
 
@@ -623,54 +600,6 @@ def _exclusive_itinerary_month(month) -> dict:
 
 
 
-def _merge_itinerary_map(disk: dict, incoming: dict) -> dict:
-    """按月合并行程。
-
-    浏览器提交了某个月（含空对象=已清空）时，以本次提交为准，不再把磁盘上
-    旧的香港大段追加回去；完全没提交行程字段时保留磁盘，避免空缓存清空仓库。
-    """
-    disk = disk if isinstance(disk, dict) else {}
-    incoming = incoming if isinstance(incoming, dict) else {}
-    out = {}
-    if incoming:
-        for month, inc in incoming.items():
-            cleaned = _exclusive_itinerary_month(inc if isinstance(inc, dict) else {})
-            if cleaned:
-                out[month] = cleaned
-        for month, cur in disk.items():
-            if month in incoming:
-                continue
-            cleaned = _exclusive_itinerary_month(cur if isinstance(cur, dict) else {})
-            if cleaned:
-                out[month] = cleaned
-        return out
-    for month, cur in disk.items():
-        cleaned = _exclusive_itinerary_month(cur if isinstance(cur, dict) else {})
-        if cleaned:
-            out[month] = cleaned
-    return out
-
-
-
-def _merge_present_month_map(disk, incoming) -> dict:
-    """浏览器提交了某个月（含空对象=已清空）则以本次为准；未提交的月份保留磁盘。"""
-    disk = disk if isinstance(disk, dict) else {}
-    incoming = incoming if isinstance(incoming, dict) else {}
-    if not incoming:
-        return dict(disk)
-    out = {}
-    for month, val in incoming.items():
-        if isinstance(val, dict) and val:
-            out[month] = val
-    for month, val in disk.items():
-        if month in incoming:
-            continue
-        if isinstance(val, dict) and val:
-            out[month] = val
-    return out
-
-
-
 def _is_default_options(opt) -> bool:
     if not isinstance(opt, dict):
         return True
@@ -702,430 +631,3 @@ def _fill_options_from_results(options: dict, results: dict) -> dict:
             next_opt["includeTravel"] = bool(include)
         out[month] = next_opt
     return out
-
-
-
-def _merge_app_state(disk: dict | None, incoming: dict | None, replace: bool = False) -> dict:
-    """把浏览器提交的状态合并进磁盘文件。
-
-    提交了某个月则以本次为准（空对象=已清空）；完全没提交的月份保留磁盘。
-    打开页面只读，不得靠合并本机缓存来改仓库。
-    """
-    incoming_raw = dict(incoming) if isinstance(incoming, dict) else {}
-    # 请求中的空年度对象是按年份删除用的墓碑，只参与本次合并，不会写入磁盘。
-    raw_annual_budgets = incoming_raw.get("annualBudgetsByYear")
-    annual_budget_tombstones = {
-        str(year) for year, value in raw_annual_budgets.items() if value == {}
-    } if isinstance(raw_annual_budgets, dict) else set()
-    raw_annual_results = incoming_raw.get("annualResultsByYear")
-    annual_result_tombstones = {
-        str(year) for year, value in raw_annual_results.items() if value == {}
-    } if isinstance(raw_annual_results, dict) else set()
-    for field, tombstones in (
-            ("annualBudgetsByYear", annual_budget_tombstones),
-            ("annualResultsByYear", annual_result_tombstones)):
-        for year in tombstones:
-            if not re.fullmatch(r"\d{4}", year) or not (2000 <= int(year) <= 2100):
-                raise ValueError(f"{field} 年份无效：{year!r}")
-    if annual_result_tombstones:
-        incoming_raw["annualResultsByYear"] = {
-            year: value for year, value in raw_annual_results.items() if value != {}
-        }
-    incoming_n = _normalize_app_state(incoming_raw)
-    if (incoming_n["year"] is None) != (incoming_n["month"] is None):
-        raise ValueError("year 与 month 必须成对提交")
-    if replace:
-        # 整份覆盖时空年度项就是“结果中不存在该年”，不能把墓碑写进磁盘。
-        return incoming_n
-    for year in annual_budget_tombstones:
-        incoming_n["annualBudgetsByYear"][year] = {}
-    for year in annual_result_tombstones:
-        incoming_n["annualResultsByYear"][year] = {}
-    disk_n = _normalize_app_state(disk)
-    itinerary = _merge_itinerary_map(
-        disk_n["itineraryByMonth"],
-        incoming_n["itineraryByMonth"],
-    )
-    options = _merge_present_month_map(
-        disk_n["optionsByMonth"],
-        incoming_n["optionsByMonth"],
-    )
-    overrides = _merge_present_month_map(
-        disk_n["overridesByMonth"],
-        incoming_n["overridesByMonth"],
-    )
-    results = _merge_present_month_map(
-        disk_n["resultsByMonth"],
-        incoming_n["resultsByMonth"],
-    )
-    subscriptions = _merge_present_month_map(
-        disk_n["subscriptionsByMonth"],
-        incoming_n["subscriptionsByMonth"],
-    )
-    annual_budgets = _merge_present_month_map(
-        disk_n["annualBudgetsByYear"],
-        incoming_n["annualBudgetsByYear"],
-    )
-    annual_results = _merge_present_month_map(
-        disk_n["annualResultsByYear"],
-        incoming_n["annualResultsByYear"],
-    )
-    asset_portfolios = _merge_present_month_map(
-        disk_n["assetPortfoliosById"],
-        incoming_n["assetPortfoliosById"],
-    )
-    year, month = disk_n["year"], disk_n["month"]
-    if incoming_n["year"] and incoming_n["month"]:
-        year, month = incoming_n["year"], incoming_n["month"]
-    return _normalize_app_state({
-        "version": max(disk_n.get("version") or 1, incoming_n.get("version") or 1),
-        "year": year,
-        "month": month,
-        "itineraryByMonth": itinerary,
-        "optionsByMonth": options,
-        "overridesByMonth": overrides,
-        "resultsByMonth": results,
-        "subscriptionsByMonth": subscriptions,
-        "annualBudgetsByYear": annual_budgets,
-        "annualResultsByYear": annual_results,
-        "assetPortfoliosById": asset_portfolios,
-    })
-
-
-
-def _read_app_state_file() -> dict | None:
-    """用户状态不是可丢弃缓存：已存在但损坏时必须拒绝静默覆盖。"""
-    return storage.read_json_file(APP_STATE_FILE, strict=True)
-
-
-
-def _load_app_state() -> dict:
-    with _state_disk_lock:
-        raw = _normalize_app_state(_read_app_state_file())
-        raw["optionsByMonth"] = _fill_options_from_results(
-            raw.get("optionsByMonth") or {},
-            raw.get("resultsByMonth") or {},
-        )
-        return raw
-
-
-
-_STATE_MAP_FIELDS = (
-    "itineraryByMonth",
-    "optionsByMonth",
-    "overridesByMonth",
-    "resultsByMonth",
-    "subscriptionsByMonth",
-    "annualBudgetsByYear",
-    "annualResultsByYear",
-    "assetPortfoliosById",
-)
-
-
-
-def _state_marker_matches(current, marker: dict) -> bool:
-    expected_exists = marker["exists"]
-    current_exists = current is not _MISSING_STATE_VALUE
-    return current_exists == expected_exists and (
-        not expected_exists or current == marker["value"]
-    )
-
-
-
-def _payload_target_marker(payload: dict, field: str, key: str | None):
-    if key is None:
-        if field not in payload:
-            return None
-        return {"exists": True, "value": payload[field]}
-    values = payload.get(field)
-    if not isinstance(values, dict) or key not in values:
-        return None
-    value = values[key]
-    # 所有状态 map 都以空对象表达删除；磁盘不会保留墓碑。
-    if isinstance(value, dict) and not value:
-        return {"exists": False}
-    return {"exists": True, "value": value}
-
-
-
-def _assert_state_patch_base(disk: dict, base_values: dict | None,
-                             payload: dict | None = None) -> None:
-    """逐键比较前端读取基线；只冲突真正修改的键，允许不同月份并行保存。"""
-    if base_values is None:
-        return
-    if not isinstance(base_values, dict):
-        raise ValueError("baseValues 必须是对象")
-    allowed = {"year", "month", *_STATE_MAP_FIELDS}
-    unknown = set(base_values) - allowed
-    if unknown:
-        raise ValueError(f"baseValues 包含未知字段：{', '.join(sorted(unknown))}")
-
-    payload = payload if isinstance(payload, dict) else {}
-
-    # 旧客户端完全不提交 baseValues 时仍按既有合并语义兼容；一旦选择使用
-    # 乐观并发协议，就必须为每个实际写入键提供比较基线，不能靠漏 marker
-    # 绕过同键冲突。year/month 是一个不可拆分的选择值，marker 也必须成对。
-    has_year_base = "year" in base_values
-    has_month_base = "month" in base_values
-    if has_year_base != has_month_base:
-        raise ValueError("baseValues.year 与 baseValues.month 必须成对提交")
-
-    payload_year = payload.get("year")
-    payload_month = payload.get("month")
-    if (payload_year is None) != (payload_month is None):
-        raise ValueError("year 与 month 必须成对提交")
-    if payload_year is not None and not (has_year_base and has_month_base):
-        raise ValueError("baseValues 必须同时包含 year 与 month 的读取基线")
-
-    for field in _STATE_MAP_FIELDS:
-        values = payload.get(field)
-        if not isinstance(values, dict) or not values:
-            continue
-        field_base = base_values.get(field)
-        if field_base is None:
-            missing = ", ".join(sorted(str(key) for key in values))
-            raise ValueError(f"baseValues.{field} 缺少写入键：{missing}")
-        if not isinstance(field_base, dict):
-            raise ValueError(f"baseValues.{field} 必须是对象")
-        marker_keys = {str(key) for key in field_base}
-        missing = [str(key) for key in values if str(key) not in marker_keys]
-        if missing:
-            raise ValueError(
-                f"baseValues.{field} 缺少写入键：{', '.join(sorted(missing))}"
-            )
-
-    def validate_basic_marker(marker, label: str) -> None:
-        if not isinstance(marker, dict) or not isinstance(marker.get("exists"), bool):
-            raise ValueError(f"baseValues.{label} 格式无效")
-        if marker["exists"] and "value" not in marker:
-            raise ValueError(f"baseValues.{label} 缺少 value")
-
-    def assert_marker(field: str, key: str | None, current, marker) -> None:
-        label = f"{field}.{key}" if key is not None else field
-        validate_basic_marker(marker, label)
-        alternatives = marker.get("alternatives", [])
-        if not isinstance(alternatives, list) or len(alternatives) > 4:
-            raise ValueError(f"baseValues.{label}.alternatives 格式无效")
-        for index, alternative in enumerate(alternatives):
-            validate_basic_marker(alternative, f"{label}.alternatives[{index}]")
-        candidates = [marker, *alternatives]
-        if any(_state_marker_matches(current, candidate) for candidate in candidates):
-            return
-        # 请求重试或最终 beacon 可能在上一笔同值写入之后到达；目标值已在
-        # 磁盘时视为幂等成功，不覆盖其它未提交键。
-        target = _payload_target_marker(payload, field, key)
-        if target is not None and _state_marker_matches(current, target):
-            return
-        raise app_contracts.StateConflictError(
-            f"{label} 已被另一个标签页修改，本次旧快照未覆盖；请刷新页面后重试"
-        )
-
-    for field in ("year", "month"):
-        if field in base_values:
-            assert_marker(field, None, disk.get(field, _MISSING_STATE_VALUE), base_values[field])
-    for field in _STATE_MAP_FIELDS:
-        field_base = base_values.get(field)
-        if field_base is None:
-            continue
-        if not isinstance(field_base, dict):
-            raise ValueError(f"baseValues.{field} 必须是对象")
-        current_map = disk.get(field) if isinstance(disk.get(field), dict) else {}
-        for key, marker in field_base.items():
-            assert_marker(field, str(key), current_map.get(str(key), _MISSING_STATE_VALUE), marker)
-
-
-
-_MISSING_STATE_VALUE = object()
-
-
-
-def _validate_state_write_identity(tab_id, sequence) -> tuple[str | None, int | None]:
-    """校验可选的同标签页写入顺序标识；旧客户端可同时省略两者。"""
-    if tab_id is None and sequence is None:
-        return None, None
-    if not isinstance(tab_id, str) or not tab_id or len(tab_id) > 64:
-        raise ValueError("tabId 必须是 1-64 个字符的非空字符串")
-    if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
-        raise ValueError("sequence 必须是从 1 开始递增的整数")
-    return tab_id, sequence
-
-
-
-def _partition_state_patch(disk: dict, base_values: dict, payload: dict) -> tuple[dict, list[str]]:
-    """按“月份/年度”逻辑键拆分 CAS，返回无冲突组和冲突组。
-
-    同一月份的行程、选项、标准和结果视为一个原子组；同一年度的全年输入
-    和全年结果也视为一个原子组。普通 PUT 由调用者保持整请求全有或全无；
-    页面已离开的 unregister 可以保存这里返回的安全组，同时不会写出半个
-    月份或半个年度的状态。
-    """
-    if not isinstance(base_values, dict):
-        raise ValueError("baseValues 必须是对象")
-    allowed = {"year", "month", *_STATE_MAP_FIELDS}
-    unknown = set(base_values) - allowed
-    if unknown:
-        raise ValueError(f"baseValues 包含未知字段：{', '.join(sorted(unknown))}")
-
-    payload_year = payload.get("year")
-    payload_month = payload.get("month")
-    has_payload_selection = payload_year is not None or payload_month is not None
-    if (payload_year is None) != (payload_month is None):
-        raise ValueError("year 与 month 必须成对提交")
-    if ("year" in base_values) != ("month" in base_values):
-        raise ValueError("baseValues.year 与 baseValues.month 必须成对提交")
-    if has_payload_selection and "year" not in base_values:
-        raise ValueError("baseValues 必须同时包含 year 与 month 的读取基线")
-
-    safe: dict = {
-        key: payload[key] for key in ("version", "updatedAt") if key in payload
-    }
-    conflicts: list[str] = []
-    if has_payload_selection:
-        selection_payload = {"year": payload_year, "month": payload_month}
-        selection_base = {
-            "year": base_values["year"], "month": base_values["month"],
-        }
-        try:
-            _assert_state_patch_base(disk, selection_base, selection_payload)
-        except app_contracts.StateConflictError:
-            conflicts.append("year/month")
-        else:
-            safe.update(selection_payload)
-
-    groups: dict[tuple[str, str], dict[str, dict]] = {}
-    expected_markers: dict[str, set[str]] = {}
-    for field in _STATE_MAP_FIELDS:
-        values = payload.get(field)
-        if values is None:
-            continue
-        if not isinstance(values, dict):
-            raise ValueError(f"{field} 必须是对象")
-        expected_markers[field] = {str(key) for key in values}
-        field_base = base_values.get(field)
-        if values and not isinstance(field_base, dict):
-            missing = ", ".join(sorted(str(key) for key in values))
-            raise ValueError(f"baseValues.{field} 缺少写入键：{missing}")
-        for raw_key, value in values.items():
-            key = str(raw_key)
-            if key not in field_base:
-                raise ValueError(f"baseValues.{field} 缺少写入键：{key}")
-            if field.startswith("annual"):
-                domain = "annual"
-            elif field == "assetPortfoliosById":
-                domain = "asset"
-            else:
-                domain = "month"
-            group = groups.setdefault((domain, key), {"payload": {}, "base": {}})
-            group["payload"].setdefault(field, {})[key] = value
-            group["base"].setdefault(field, {})[key] = field_base[key]
-
-    # 多余 marker 没有对应写入目标，通常意味着客户端协议实现有误；拒绝它，
-    # 避免无关旧基线制造伪冲突或掩盖漏字段。
-    for field in _STATE_MAP_FIELDS:
-        field_base = base_values.get(field)
-        if field_base is None:
-            continue
-        if not isinstance(field_base, dict):
-            raise ValueError(f"baseValues.{field} 必须是对象")
-        extras = {str(key) for key in field_base} - expected_markers.get(field, set())
-        if extras:
-            raise ValueError(
-                f"baseValues.{field} 包含未写入键：{', '.join(sorted(extras))}"
-            )
-
-    for (domain, key), group in groups.items():
-        try:
-            _assert_state_patch_base(disk, group["base"], group["payload"])
-        except app_contracts.StateConflictError:
-            conflicts.append(f"{domain}:{key}")
-            continue
-        for field, values in group["payload"].items():
-            safe.setdefault(field, {}).update(values)
-    return safe, conflicts
-
-
-
-def _save_app_state(payload: dict, replace: bool = False,
-                    base_values: dict | None = None,
-                    tab_id: str | None = None,
-                    sequence: int | None = None,
-                    allow_partial_conflicts: bool = False) -> dict:
-    tab_id, sequence = _validate_state_write_identity(tab_id, sequence)
-    with _state_disk_lock:
-        raw_disk = _read_app_state_file()
-        needs_fixed_budget_migration = _has_legacy_fixed_overrides(raw_disk)
-        disk = _normalize_app_state(raw_disk)
-        disk["optionsByMonth"] = _fill_options_from_results(
-            disk.get("optionsByMonth") or {}, disk.get("resultsByMonth") or {},
-        )
-        if tab_id is not None:
-            previous_sequence = _state_write_sequences.get(tab_id)
-            if previous_sequence is not None and sequence <= previous_sequence:
-                return disk
-            # 记录最高“已见”序号，而非仅记录成功写盘序号。较新的请求代表该
-            # 标签页的最终意图；即使它随后因跨标签 CAS 冲突而被拒绝，旧请求
-            # 也不能在锁释放后反向落盘。
-            _state_write_sequences[tab_id] = sequence
-        conflicts: list[str] = []
-        safe_payload = payload
-        if not replace and base_values is not None:
-            safe_payload, conflicts = _partition_state_patch(disk, base_values, payload)
-            # 普通 PUT 必须全有或全无。若先写入无冲突组再返回 409，浏览器会
-            # 保留整份旧基线，后续编辑和删除便会与已部分落盘的状态分叉。
-            # 只有页面已经离开的 unregister 可以按组抢救无冲突修改。
-            if conflicts and not allow_partial_conflicts:
-                raise app_contracts.StateConflictError(
-                    "以下状态已被另一个标签页修改，本次请求未写入："
-                    f"{', '.join(conflicts)}。请刷新页面后重试"
-                )
-        meaningful = replace or any(
-            key in safe_payload for key in ("year", "month", *_STATE_MAP_FIELDS)
-        )
-        if meaningful:
-            if needs_fixed_budget_migration:
-                # 迁移会从所有月份移除旧 fixed/extra 字段。必须先留下完整、
-                # 只追加且不参与计算的原始快照；备份失败则本次写入整体失败。
-                from application import backups as app_backups
-                app_backups.create_data_backup(
-                    reason="pre-subscription-fixed-migration",
-                    state_lock=_state_disk_lock,
-                    defaults_lock=app_defaults.defaults_disk_lock,
-                )
-            state = _merge_app_state(disk, safe_payload, replace=replace)
-            state["updatedAt"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            storage.atomic_write_text(
-                APP_STATE_FILE,
-                json.dumps(state, ensure_ascii=False, indent=2),
-            )
-        else:
-            state = disk
-        if conflicts:
-            saved_note = "；其它无冲突月份/年度已保存" if meaningful else ""
-            raise app_contracts.StateConflictError(
-                f"以下状态已被另一个标签页修改，本次旧快照未覆盖：{', '.join(conflicts)}"
-                f"{saved_note}。请刷新页面后重试"
-            )
-    return state
-
-
-
-def api_get_state():
-    """读取随仓库同步的行程、每月选项、标准覆盖与计算结果。"""
-    return _load_app_state()
-
-
-
-def api_put_state(body: app_contracts.AppStateIn):
-    """把浏览器当前数据合并写入 data/app-state.json。空缓存不会清掉磁盘上已有行程。"""
-    payload = body.model_dump() if hasattr(body, "model_dump") else body.dict()
-    replace = bool(payload.pop("replace", False))
-    base_values = payload.pop("baseValues", None)
-    tab_id = payload.pop("tabId", None)
-    sequence = payload.pop("sequence", None)
-    return _save_app_state(
-        payload,
-        replace=replace,
-        base_values=base_values,
-        tab_id=tab_id,
-        sequence=sequence,
-    )

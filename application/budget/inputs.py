@@ -8,7 +8,10 @@ from application import metadata as app_metadata
 def required_currencies(itinerary, region, resolved_standards) -> list[str]:
     """从同一标准快照和实际行程推导所需行情币种。"""
     _, fixed, _, registry, extra = resolved_standards
-    currencies = set(fixed[region])
+    currencies = {
+        currency for currency, amount in fixed[region].items()
+        if float(amount) > 0
+    }
     for location in pd.DataFrame(itinerary)["location"].unique():
         if location not in registry:
             raise ValueError(f"未知地点：{location}（可先在页面「新建预算标准」中添加）")

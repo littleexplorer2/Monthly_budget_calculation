@@ -30,18 +30,21 @@ function savedResult() {
 }
 
 function stateWithSavedMonth() {
-  const state = defaultStateFixture();
-  state.itineraryByMonth[MONTH] = {
-    Shenzhen: [{ start: '2026-09-01', end: '2026-09-02' }],
+  return {
+    version: 1,
+    year: 2026,
+    month: 9,
+    itineraryByMonth: {
+      [MONTH]: { Shenzhen: [{ start: '2026-09-01', end: '2026-09-02' }] },
+    },
+    optionsByMonth: {
+      [MONTH]: { region: 'Overseas', includeTravel: true, travelSelected: null },
+    },
+    overridesByMonth: {
+      [MONTH]: { variable: { Shenzhen: { CNY: 90 } } },
+    },
+    resultsByMonth: { [MONTH]: savedResult() },
   };
-  state.optionsByMonth[MONTH] = {
-    region: 'Overseas', includeTravel: true, travelSelected: null,
-  };
-  state.overridesByMonth[MONTH] = {
-    variable: { Shenzhen: { CNY: 90 } },
-  };
-  state.resultsByMonth[MONTH] = savedResult();
-  return state;
 }
 
 async function initialized(options = {}) {
@@ -52,7 +55,7 @@ async function initialized(options = {}) {
 }
 
 function assertStaleResult(doc, app, reasonPattern) {
-  const result = app.state.resultsByMonth[MONTH];
+  const result = app.state.monthsByKey[MONTH].result;
   assert.equal(result.stale, true, '输入变化后已保存结果必须标记为 stale');
   assert.match(result.staleReason, reasonPattern);
   assert.equal(app.state.calcResult, result, '结果页应指向同一份已过期结果');
@@ -79,15 +82,15 @@ test('当前月已有结果时，修改行程会标记旧结果并从月度比�
   const { doc, app } = await initialized();
   app.addRange('Shenzhen', '2026-09-03', '2026-09-04');
 
-  assert.equal(app.state.itineraryByMonth[MONTH].Shenzhen.length, 2);
+  assert.equal(app.state.monthsByKey[MONTH].itinerary.Shenzhen.length, 2);
   assert.deepEqual(
-    JSON.parse(JSON.stringify(app.state.itineraryByMonth[MONTH].Shenzhen[1])),
+    JSON.parse(JSON.stringify(app.state.monthsByKey[MONTH].itinerary.Shenzhen[1])),
     { start: '2026-09-03', end: '2026-09-04' },
   );
   assertStaleResult(doc, app, /行程|计算选项/);
 });
 
-test('删除月份的 state PUT 失败时回滚内存、页面与本机快照', async () => {
+test('删除月份的 revision DELETE 失败时本地实体和页面保持不变', async () => {
   const quietConsole = { log() {}, info() {}, warn() {}, error() {} };
   const { doc, app, requests, storage } = await initialized({ statePutFailure: true, console: quietConsole });
   const before = JSON.parse(JSON.stringify(app.snapshotBundle()));
@@ -96,26 +99,20 @@ test('删除月份的 state PUT 失败时回滚内存、页面与本机快照', 
   await app.deleteMonthData(MONTH);
 
   const after = JSON.parse(JSON.stringify(app.snapshotBundle()));
-  for (const field of ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth']) {
-    assert.deepEqual(after[field], before[field], `${field} 应在 PUT 失败后回滚`);
-  }
+  assert.deepEqual(after.months, before.months, 'DELETE 失败前不应先改动本地实体');
   assert.equal(app.state.region, 'Overseas');
   assert.equal(app.state.includeTravel, true);
   assert.equal(app.state.standards.variable.Shenzhen.CNY, 90);
   assert.equal(app.state.calcResult.summary['总预算(人民币)'], 1000);
   assert.match(doc.querySelector('#result-summary').textContent, /¥ 1,000\.00/, '结果页应恢复删除前内容');
-  assert.match(doc.querySelector('#toast').textContent, /页面数据已恢复/);
+  assert.match(doc.querySelector('#toast').textContent, /删除.*失败/);
 
-  const statePut = requests.find((item) => item.url === '/api/state' && item.method === 'PUT');
-  assert.ok(statePut, '应先向服务器提交删除墓碑');
-  for (const field of ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth']) {
-    assert.deepEqual(statePut.body[field][MONTH], {}, `${field} 应发送删除墓碑`);
-  }
+  const stateDelete = requests.find((item) => item.url === `/api/months/${MONTH}` && item.method === 'DELETE');
+  assert.ok(stateDelete, '应向月份实体端点提交带 revision 的 DELETE');
+  assert.equal(stateDelete.body.base_revision, 1);
   assert.equal(requests.some((item) => item.url === '/api/data/rates/delete'), false,
     '状态删除失败后不应继续删汇率缓存');
 
-  const cached = JSON.parse(storage.get('budget-web-state-v1'));
-  for (const field of ['itineraryByMonth', 'optionsByMonth', 'overridesByMonth', 'resultsByMonth']) {
-    assert.deepEqual(cached[field], before[field], `${field} 的 localStorage 快照也必须回滚`);
-  }
+  const cached = JSON.parse(storage.get('budget-web-state-v2'));
+  assert.deepEqual(cached.months, before.months, 'localStorage v2 镜像也必须保持原实体');
 });

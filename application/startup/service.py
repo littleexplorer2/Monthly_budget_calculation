@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import logging
+import socket
 import sys
 import threading
 import webbrowser
@@ -26,6 +28,30 @@ def _ensure_console_utf8() -> None:
                 pass
 
 
+def _assert_port_available(host: str, port: int) -> None:
+    """在输出成功信息或打开浏览器前检查监听地址。"""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind((host, port))
+        except OSError as exc:
+            raise RuntimeError(
+                f"无法监听 {host}:{port}；端口可能已被占用，请关闭旧服务或使用 --port。"
+            ) from exc
+
+
+def _assert_loopback_host(host: str) -> None:
+    candidate = str(host).strip().lower().strip("[]")
+    if candidate == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(candidate).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise RuntimeError("本工具只允许监听回环地址（127.0.0.1、::1 或 localhost）")
+
+
 
 def main() -> None:
     _ensure_console_utf8()
@@ -39,9 +65,20 @@ def main() -> None:
                         help="启动后不自动打开浏览器")
     parser.add_argument("--no-autoshutdown", action="store_true",
                         help="关闭浏览器页面时不自动停止服务（服务常驻，需手动 Ctrl+C 停止）")
-    parser.add_argument("--autoshutdown-grace", type=float, default=0.0,
-                        help="最后一个页面关闭后等待的宽限期秒数（默认 0，立即停止并释放端口）")
+    parser.add_argument("--autoshutdown-grace", type=float, default=2.0,
+                        help="最后一个页面关闭后等待的宽限期秒数（默认 2，允许刷新重新注册）")
     args = parser.parse_args()
+
+    try:
+        _assert_loopback_host(args.host)
+        _assert_port_available(args.host, args.port)
+    except RuntimeError as exc:
+        parser.exit(3, f"错误：{exc}\n")
+
+    try:
+        migration = app_state.migrate_v1_to_v2()
+    except (OSError, ValueError) as exc:
+        parser.exit(4, f"错误：用户状态迁移/校验失败，未启动服务：{exc}\n")
 
     app_lifecycle.configure(auto_shutdown=not args.no_autoshutdown, grace=args.autoshutdown_grace)
 
@@ -55,45 +92,50 @@ def main() -> None:
         print("默认预算标准：core/standards/builtin.py 出厂值")
     if app_defaults.defaults_load_error():
         print(f"警告：{app_defaults.defaults_load_error()}")
-    state_readable = True
-    try:
-        st = app_state.load_app_state()
-    except ValueError as exc:
-        # 启动信息只需要统计，不能因为用户状态损坏而让修复页面也无法打开。
-        # API 的严格读写仍会拒绝该文件，前端可回退 localStorage 并明确提示。
-        state_readable = False
-        st = app_state.empty_app_state()
-        print(f"警告：项目状态无法读取，服务将以只读修复模式启动：{exc}")
+    months, month_errors = app_state.scan_months()
+    global_state = app_state.load_global()
     itin_months = [
-        m for m, v in (st.get("itineraryByMonth") or {}).items()
-        if app_state.itinerary_range_count({m: v}) > 0
+        month for month, document in months.items()
+        if any(document.get("itinerary", {}).values())
     ]
-    print(f"行程数据：data/app-state.json（{len(itin_months)} 个有行程的月份）")
-    print(f"内地/境外选项：{len(st.get('optionsByMonth') or {})} 个月")
+    if migration.get("migrated"):
+        print(f"状态迁移：已完成 v1 → v2（{migration.get('months', 0)} 个月份）")
+        print(f"迁移报告：{migration.get('report')}")
+    print(f"月份实体：data/months/（{len(months)} 个月，{len(itin_months)} 个有行程）")
+    if month_errors:
+        print(f"警告：{len(month_errors)} 个月份文件损坏，已隔离；请从只追加备份核对恢复：")
+        for filename, message in sorted(month_errors.items()):
+            print(f"  - {filename}: {message}")
+    print(f"全局数据：data/global.json（修订 {global_state['revision']}）")
     print(f"汇率缓存：data/rates/（{len(app_rates.list_rate_months())} 个月）")
     print(f"退出备份：{app_config.BACKUP_DIR}（只追加，不参与预算计算）")
-    if state_readable and not itin_months:
-        print("提示：行程仍为空。请在「有旧行程的那台 Windows 浏览器」打开本页一次，再 git add data/app-state.json && git commit && git push")
+    if not itin_months:
+        print("提示：行程仍为空；可在预算页确认新增月份后录入行程。")
     if args.open_browser:
         print("即将自动打开浏览器")
     if app_lifecycle.settings()["enabled"]:
         if app_lifecycle.settings()["grace"] > app_lifecycle.SHUTDOWN_FLUSH_SECONDS:
             print(f"自动关闭：关闭页面后约 {app_lifecycle.settings()['grace']:g} 秒停止服务并释放端口")
         else:
-            print("自动关闭：关闭页面后立即保存数据、停止服务并释放端口")
+            print("自动关闭：关闭页面后保存数据、停止服务并释放端口")
         print(f"自动关闭兜底：浏览器漏发关闭事件时，失联约 {app_lifecycle.TAB_LEASE_SECONDS:g} 秒后停止服务")
     else:
         print("自动关闭：已禁用（--no-autoshutdown），请手动 Ctrl+C 停止服务")
     print("按 Ctrl+C 停止服务")
     print("=" * 60)
 
+    browser_timer = None
     if args.open_browser:
-        threading.Timer(1.2, webbrowser.open, args=(url,)).start()
+        browser_timer = threading.Timer(1.2, webbrowser.open, args=(url,))
+        browser_timer.daemon = True
+        browser_timer.start()
 
     import uvicorn
     try:
         uvicorn.run(app_api.app, host=args.host, port=args.port, log_level="info")
     finally:
+        if browser_timer is not None:
+            browser_timer.cancel()
         try:
             backup_path = app_backups.create_data_backup(
                 reason="server-process-stopped",

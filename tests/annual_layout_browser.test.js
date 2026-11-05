@@ -6,7 +6,7 @@ const http = require('node:http');
 const path = require('node:path');
 const test = require('node:test');
 const { launchProbeBrowser } = require('./helpers/browser-probe.js');
-const { defaultMetaFixture } = require('./helpers/dom-stub.js');
+const { defaultMetaFixture, stateFixtureV2 } = require('./helpers/dom-stub.js');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -131,7 +131,7 @@ function startMockServer() {
   const webRoot = path.join(root, 'web');
   const year = new Date().getFullYear();
   const meta = defaultMetaFixture();
-  const state = appState(year);
+  const state = stateFixtureV2(appState(year), meta);
   const mime = {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
@@ -143,12 +143,13 @@ function startMockServer() {
     const parsed = new URL(req.url, 'http://127.0.0.1');
     const pathname = decodeURIComponent(parsed.pathname);
     if (pathname === '/api/meta') return jsonResponse(res, meta);
-    if (pathname === '/api/state') return jsonResponse(res, req.method === 'GET' ? state : {});
+    if (pathname === '/api/months') return jsonResponse(res, { schemaVersion: 2, months: state.months });
+    if (pathname === '/api/global') return jsonResponse(res, state.global);
     if (pathname === '/api/network-check') return jsonResponse(res, { ok: true });
     if (pathname === '/api/tabs/register' || pathname === '/api/tabs/unregister') return jsonResponse(res, { ok: true });
     if (pathname === '/api/asset-rates') return jsonResponse(res, assetRates(year));
     if (pathname === '/api/annual-rates') return jsonResponse(res, annualRates(Number(parsed.searchParams.get('year')) || year));
-    if (pathname === '/api/annual-budget') return jsonResponse(res, state.annualResultsByYear[year]);
+    if (pathname === '/api/annual-budget') return jsonResponse(res, state.global.annualResultsByYear[year]);
     if (pathname.startsWith('/api/')) return jsonResponse(res, {});
 
     const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');

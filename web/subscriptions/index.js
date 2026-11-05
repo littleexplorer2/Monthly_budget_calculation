@@ -8,7 +8,7 @@
     create({ feedback: feedbackModule, persistence: persistenceModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule }, service = {}) {
       const { state } = stateModule;
       let fallbackId = 0;
-      const runtime = { suppressedMonths: new Set() };
+      const runtime = { initializedDrafts: new Set() };
 
       function monthKey() {
         return `${state.year}-${sharedModule.pad2(state.month)}`;
@@ -18,8 +18,9 @@
         fallbackId += 1;
         const uuid = window.crypto && typeof window.crypto.randomUUID === 'function'
           ? window.crypto.randomUUID() : `${Date.now()}-${fallbackId}`;
-        const monthlyIds = Object.values(state.subscriptionsByMonth || {})
-          .flatMap((snapshot) => {
+        const monthlyIds = Object.values(state.monthsByKey || {})
+          .flatMap((entity) => {
+            const snapshot = entity && entity.subscriptions;
             if (!snapshot || typeof snapshot !== 'object') return [];
             const itemIds = Array.isArray(snapshot.items)
               ? snapshot.items.map((item) => item.id) : [];
@@ -118,21 +119,12 @@
           for (const previous of previousItems) {
             const id = String(previous.id);
             const item = defaultsById.get(id);
-            if (retiredIds.has(id) || !previous.includeByDefault || (item && !item.includeByDefault)) {
+            if (retiredIds.has(id) || !previous.includeByDefault || !item || !item.includeByDefault) {
               retiredIds.add(id);
               continue;
             }
             inheritedIds.add(id);
-            const next = item ? service.monthItemFromDefault(item) : {
-              id,
-              name: String(previous.name),
-              currency: sharedModule.EXTRA_CURRENCIES.includes(previous.currency) ? previous.currency : 'CNY',
-              cycle: previous.cycle === 'yearly' ? 'yearly' : 'monthly',
-              amount: Math.max(0, Number(previous.amount) || 0),
-              included: true,
-              includeByDefault: true,
-              appliesTo: service.normalizeAppliesTo(previous),
-            };
+            const next = service.monthItemFromDefault(item);
             // 默认目录提供每个新月份的标准金额；当月单独改过的金额不会向后传播。
             // 只在本月新增、尚未进入目录的项目仍按当前定义延续。
             next.included = true;
@@ -192,13 +184,13 @@
       }
 
       function previousSnapshot(key) {
-        const map = state.subscriptionsByMonth || {};
+        const map = state.monthsByKey || {};
         const previousKey = Object.keys(map)
           .filter((candidate) => candidate < key && map[candidate]
-            && Array.isArray(map[candidate].items))
+            && map[candidate].subscriptions && Array.isArray(map[candidate].subscriptions.items))
           .sort()
           .at(-1);
-        return previousKey ? map[previousKey] : null;
+        return previousKey ? map[previousKey].subscriptions : null;
       }
 
       /**
@@ -206,46 +198,42 @@
        * 唯一例外是明确确认的永久取消，它会从取消月之后传播墓碑。
        */
       function ensureMonth(key = service.monthKey()) {
-        if (runtime.suppressedMonths.has(key)) return { items: [], retiredIds: [] };
-        if (!state.subscriptionsByMonth || typeof state.subscriptionsByMonth !== 'object') {
-          state.subscriptionsByMonth = {};
+        const entity = persistenceModule.ensureLocalMonthDraft(key);
+        if (entity.revision > 0 && entity.subscriptions && Array.isArray(entity.subscriptions.items)) {
+          return entity.subscriptions;
         }
-        if (Object.prototype.hasOwnProperty.call(state.subscriptionsByMonth, key)) {
-          const existing = state.subscriptionsByMonth[key];
-          return existing && Array.isArray(existing.items)
-            ? existing : { items: [], retiredIds: [] };
+        if (!runtime.initializedDrafts.has(key)) {
+          const previous = service.previousSnapshot(key);
+          entity.subscriptions = previous
+            ? service.cloneForNextMonth(previous)
+            : (service.defaultCatalogConfigured()
+              ? service.cloneForNextMonth({ items: [], retiredIds: [] }) : service.legacySnapshot());
+          runtime.initializedDrafts.add(key);
         }
-        const monthAlreadyExisted = [
-          state.itineraryByMonth, state.optionsByMonth, state.overridesByMonth, state.resultsByMonth,
-        ].some((map) => map && Object.prototype.hasOwnProperty.call(map, key));
-        const previous = monthAlreadyExisted ? null : service.previousSnapshot(key);
-        const configured = service.defaultCatalogConfigured();
-        const snapshot = previous
-          ? service.cloneForNextMonth(previous)
-          : (configured && !monthAlreadyExisted
-            ? service.cloneForNextMonth({ items: [], retiredIds: [] }) : service.legacySnapshot());
-        state.subscriptionsByMonth[key] = snapshot;
-        return snapshot;
+        return entity.subscriptions;
+      }
+
+      /** 纯读取当前快照；渲染、汇总和打开默认弹窗都不得因此创建月份。 */
+      function monthSnapshot(key = service.monthKey()) {
+        const entity = state.monthsByKey && state.monthsByKey[key];
+        const snapshot = entity && entity.subscriptions;
+        return snapshot && Array.isArray(snapshot.items)
+          ? snapshot : { items: [], retiredIds: [] };
       }
 
       function editableSnapshot() {
         const key = service.monthKey();
-        runtime.suppressedMonths.delete(key);
-        const current = service.ensureMonth(key);
-        if (state.subscriptionsByMonth[key] !== current) {
-          state.subscriptionsByMonth[key] = { items: [], retiredIds: [] };
-        }
-        return state.subscriptionsByMonth[key];
+        return service.ensureMonth(key);
       }
 
       function updateFutureLifecycle(id, sourceKey, activeItem = null) {
         const itemId = String(id);
-        const map = state.subscriptionsByMonth || {};
+        const map = state.monthsByKey || {};
         const catalog = Array.isArray((state.meta || {}).default_subscriptions)
           ? state.meta.default_subscriptions : [];
         const catalogItem = catalog.find((item) => String(item.id) === itemId);
         for (const key of Object.keys(map).filter((candidate) => candidate > sourceKey).sort()) {
-          const snapshot = map[key];
+          const snapshot = map[key] && map[key].subscriptions;
           if (!snapshot || !Array.isArray(snapshot.items)) continue;
           const retired = new Set(Array.isArray(snapshot.retiredIds)
             ? snapshot.retiredIds.map((value) => String(value)) : []);
@@ -266,18 +254,11 @@
             }
           }
           snapshot.retiredIds = Array.from(retired);
+          persistenceModule.markMonthDirty('subscriptions', key);
         }
       }
 
-      function suppressMonth(key = service.monthKey()) {
-        runtime.suppressedMonths.add(key);
-      }
-
-      function unsuppressMonth(key = service.monthKey()) {
-        runtime.suppressedMonths.delete(key);
-      }
-
-      function totals(snapshot = service.ensureMonth(), region = state.region) {
+      function totals(snapshot = service.monthSnapshot(), region = state.region) {
         const out = { CNY: 0, HKD: 0, USD: 0 };
         for (const item of snapshot.items || []) {
           if (!item.included || !service.appliesToRegion(item, region)
@@ -291,9 +272,10 @@
       }
 
       function syncCurrentMonth() {
+        const snapshot = service.monthSnapshot();
         state.standards.fixed = {
-          Mainland: service.totals(service.ensureMonth(), 'Mainland'),
-          Overseas: service.totals(service.ensureMonth(), 'Overseas'),
+          Mainland: service.totals(snapshot, 'Mainland'),
+          Overseas: service.totals(snapshot, 'Overseas'),
         };
         standardsModule.ensureExtraStandards();
         return sharedModule.deepClone(state.standards.fixed[state.region]);
@@ -346,7 +328,7 @@
             appliesTo: service.normalizeAppliesTo(item),
           }));
         }
-        const current = service.ensureMonth();
+        const current = service.monthSnapshot();
         return (current.items || []).map((item) => ({
           id: String(item.id),
           name: String(item.name),
@@ -361,12 +343,12 @@
       function visibleDefaultDraftItems() {
         const draft = state.defaultsDraft && Array.isArray(state.defaultsDraft.subscriptions)
           ? state.defaultsDraft.subscriptions : [];
-        const latest = Object.entries(state.subscriptionsByMonth || {})
-          .filter(([, snapshot]) => snapshot && Array.isArray(snapshot.items))
+        const latest = Object.entries(state.monthsByKey || {})
+          .filter(([, entity]) => entity && entity.subscriptions && Array.isArray(entity.subscriptions.items))
           .sort(([left], [right]) => left.localeCompare(right))
           .at(-1);
         if (!latest) return draft.filter((item) => item.includeByDefault === true);
-        const snapshot = latest[1];
+        const snapshot = latest[1].subscriptions;
         const currentById = new Map(snapshot.items.map((item) => [String(item.id), item]));
         const retired = new Set(Array.isArray(snapshot.retiredIds)
           ? snapshot.retiredIds.map((id) => String(id)) : []);
@@ -530,7 +512,7 @@
       }
 
       function render() {
-        const snapshot = service.ensureMonth();
+        const snapshot = service.monthSnapshot();
         const total = service.syncCurrentMonth();
         service.renderSummary(snapshot, total);
         const list = sharedModule.$('#subscription-list');
@@ -557,9 +539,10 @@
       function commit(message, options = {}) {
         const total = service.syncCurrentMonth();
         standardsModule.saveOverrides();
+        persistenceModule.markMonthDirty('subscriptions');
         persistenceModule.saveState();
         standardsViewModule.renderStandards();
-        if (options.renderList === false) service.renderSummary(service.ensureMonth(), total);
+        if (options.renderList === false) service.renderSummary(service.monthSnapshot(), total);
         else service.render();
         if (message) feedbackModule.toast(message, 'info');
       }
@@ -661,9 +644,8 @@
         legacySnapshot,
         previousSnapshot,
         ensureMonth,
+        monthSnapshot,
         editableSnapshot,
-        suppressMonth,
-        unsuppressMonth,
         totals,
         syncCurrentMonth,
         option,

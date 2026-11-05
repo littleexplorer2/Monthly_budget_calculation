@@ -167,7 +167,7 @@
 
         // 旅居预算：默认标准弹窗里始终显示（不再依赖「包含旅居」开关），
         // 未勾选「显示全部旅居预算」时只列本月行程里出现过的旅居地点。
-        budgetBlocks.push(service.renderTravelStandardsBlocks({
+        budgetBlocks.push(`<div class="defaults-travel-block">${service.renderTravelStandardsBlocks({
           values,
           chipFor: standardsEditorModule.defaultsDiffChip,
           customs: [],
@@ -176,7 +176,7 @@
             ? '暂无旅居地点'
             : '本月行程里还没有旅居地点；勾选上方「显示全部旅居预算」可查看全部。',
           showRule: false,
-        }));
+        })}</div>`);
         host.innerHTML = `<section class="defaults-section defaults-budget-section">
           <div class="defaults-section-head">
             <div><span class="eyebrow">01 · DAILY & TRAVEL</span><h2>每日与旅居预算标准</h2></div>
@@ -188,7 +188,8 @@
 
       /** 本月行程里出现过的旅居地点（按行程表里的先后顺序；只认有旅居标准的地点） */
       function monthItineraryTravelLocations(values) {
-        const map = (state.itineraryByMonth && state.itineraryByMonth[monthlyModule.monthKey()]) || {};
+        const entity = state.monthsByKey && state.monthsByKey[monthlyModule.monthKey()];
+        const map = (entity && entity.itinerary) || {};
         const known = new Set(Object.keys((values && values.travel) || {}));
         const out = [];
         for (const key of Object.keys(map)) {

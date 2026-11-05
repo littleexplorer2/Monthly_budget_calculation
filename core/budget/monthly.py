@@ -8,10 +8,16 @@ from core.rates import valid_rate_series
 from core.standards import resolve_standards
 
 def _rates_for_dates(rates_dict, currency, dates):
-    """从完整行情轴上为目标日期取值，不把全 NaN 静默求和为 0。"""
+    """从完整行情轴上为目标日期取值；只填补轴内缺口，不向边界外推。"""
     values = valid_rate_series(rates_dict, currency)
     target = pd.DatetimeIndex(pd.to_datetime(dates)).normalize()
-    completed = values.reindex(values.index.union(target)).sort_index().ffill().bfill().reindex(target)
+    unique_target = target.unique().sort_values()
+    outside = unique_target[(unique_target < values.index.min()) | (unique_target > values.index.max())]
+    if len(outside):
+        missing = outside.strftime("%Y-%m-%d").tolist()
+        raise ValueError(f"币种 {currency} 的汇率不覆盖行程日：{', '.join(missing[:3])}")
+    completed_axis = values.index.union(unique_target).unique().sort_values()
+    completed = values.reindex(completed_axis).ffill().reindex(target)
     if completed.isna().any():
         missing = target[completed.isna()].strftime("%Y-%m-%d").tolist()
         raise ValueError(f"币种 {currency} 缺少行程日汇率：{', '.join(missing[:3])}")
@@ -52,9 +58,23 @@ def calculate_travel_budget(itinerary, region, year, month,
 
     # 1. 解析行程数据
     df_itinerary = pd.DataFrame(itinerary)
-    df_itinerary["date"] = pd.to_datetime(df_itinerary["date"])
-    # 保留旧计算入口的年月合法性检查，显式提供汇率时也不能绕过。
-    pd.Timestamp(year=year, month=month, day=1)
+    required_columns = {"date", "location", "is_travel"}
+    missing_columns = required_columns - set(df_itinerary.columns)
+    if missing_columns:
+        raise ValueError(f"行程缺少字段：{', '.join(sorted(missing_columns))}")
+    try:
+        df_itinerary["date"] = pd.to_datetime(df_itinerary["date"], errors="raise").dt.normalize()
+        month_start = pd.Timestamp(year=year, month=month, day=1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("行程日期或计算年月无效") from exc
+    month_end = month_start + pd.offsets.MonthEnd(1)
+    outside_month = df_itinerary.loc[
+        (df_itinerary["date"] < month_start) | (df_itinerary["date"] > month_end),
+        "date",
+    ]
+    if not outside_month.empty:
+        dates = outside_month.dt.strftime("%Y-%m-%d").drop_duplicates().tolist()
+        raise ValueError(f"行程包含计算月份以外的日期：{', '.join(dates[:3])}")
 
     # 2. 校验涉及的地点（注册表含自定义地点）。
     visited_locations = df_itinerary["location"].unique()
@@ -122,6 +142,8 @@ def calculate_travel_budget(itinerary, region, year, month,
 
     fixed_standard = fixed_std[region]
     for curr, monthly_local in fixed_standard.items():
+        if not monthly_local:
+            continue
         avg_rate = _average_rate(rates_dict, curr)
         monthly_rmb = monthly_local * avg_rate
 
@@ -194,5 +216,4 @@ def calculate_travel_budget(itinerary, region, year, month,
         "daily_details": variable_details,
         "fixed_details": fixed_details,
         "extra_details": extra_details,
-        "rates_dict": rates_dict  # 保留汇率原始数据供核对
     }

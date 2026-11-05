@@ -298,7 +298,8 @@
           const count = Object.values(itin).reduce((a, r) => a + r.length, 0);
           if (!count) { feedbackModule.toast('本月暂无行程', 'warn'); return; }
           if (!window.confirm(`确定清空 ${state.year}年${state.month}月 的全部 ${count} 条时间段吗？`)) return;
-          state.itineraryByMonth[monthlyModule.monthKey()] = {};
+          const entity = persistenceModule.ensureLocalMonthDraft(monthlyModule.monthKey());
+          entity.itinerary = {};
           persistenceModule.saveState();
           calendarModule.renderCalendar();
           itineraryModule.renderItinerary();
@@ -372,7 +373,12 @@
         });
         sharedModule.$('#data-modal-list').addEventListener('click', (ev) => {
           const btn = ev.target.closest('button[data-action="del-month"]');
-          if (btn && btn.dataset.month) dataModule.deleteMonthData(btn.dataset.month);
+          if (btn && btn.dataset.month) {
+            dataModule.deleteMonthData(btn.dataset.month);
+            return;
+          }
+          const restore = ev.target.closest('button[data-action="restore-backup"]');
+          if (restore && restore.dataset.backupId) dataModule.restoreBackup(restore.dataset.backupId);
         });
         sharedModule.$('#btn-data-clear-all').addEventListener('click', dataModule.clearAllData);
         sharedModule.$('#btn-data-upload').addEventListener('click', dataModule.uploadAllData);
@@ -407,29 +413,54 @@
         state.year = now.getFullYear();
         state.month = now.getMonth() + 1;
 
-        let serverBundle = null;
+        let monthBundle = null;
+        let globalDocument = null;
         try {
-          serverBundle = await apiModule.api('/api/state', { timeout: 15000 });
+          [monthBundle, globalDocument] = await Promise.all([
+            apiModule.api('/api/months', { timeout: 15000 }),
+            apiModule.api('/api/global', { timeout: 15000 }),
+          ]);
         } catch (err) {
           persistenceModule.runtime.serverStateReady = false;
-          console.warn('读取服务器行程数据失败，回退到本机缓存', err);
+          console.warn('读取服务器 v2 实体失败，回退到本机缓存', err);
           feedbackModule.toast(`读取项目状态失败：${err.message}。已回退到浏览器缓存；服务器恢复前无法安全保存。`, 'error');
         }
-        if (serverBundle && typeof serverBundle === 'object' && !Array.isArray(serverBundle)) {
-          persistenceModule.runtime.serverStateReady = true;
-          persistenceModule.applyBundle(serverBundle);
-          persistenceModule.runtime.serverBaseline = sharedModule.deepClone(serverBundle);
-          persistenceModule.writeLocalCache(persistenceModule.snapshotBundle());
+        let recoverLocalChanges = false;
+        let selectedMonth = null;
+        if (monthBundle && globalDocument) {
+          selectedMonth = persistenceModule.applyServerData(monthBundle, globalDocument);
+          const damagedMonths = Object.entries(monthBundle.errors || {});
+          if (damagedMonths.length) {
+            feedbackModule.toast(
+              `${damagedMonths.length} 个月份文件损坏，已从页面隔离；请在 backups/ 中核对可恢复快照。`,
+              'error',
+            );
+          }
+          if (persistenceModule.hasUnsyncedLocalChanges() && window.confirm(
+            '检测到上次服务器不可用期间保存在本浏览器的修改。是否以本机版本恢复并重新同步？\n'
+            + '选择“取消”将使用服务器版本。',
+          )) {
+            recoverLocalChanges = persistenceModule.applyLocalRecovery(persistenceModule.readLocalBundle());
+          } else {
+            persistenceModule.clearUnsyncedLocalChanges();
+            persistenceModule.writeLocalCache(persistenceModule.snapshotBundle());
+          }
         } else {
           persistenceModule.runtime.serverStateReady = false;
-          persistenceModule.runtime.serverBaseline = null;
-          persistenceModule.applyBundle(persistenceModule.readLocalBundle());
+          selectedMonth = persistenceModule.applyOfflineBundle(persistenceModule.readLocalBundle());
+        }
+        if (selectedMonth && /^\d{4}-\d{2}$/.test(selectedMonth)) {
+          const [selectedYear, selectedNumber] = selectedMonth.split('-').map(Number);
+          if (selectedYear >= 2000 && selectedYear <= 2100 && selectedNumber >= 1 && selectedNumber <= 12) {
+            state.year = selectedYear;
+            state.month = selectedNumber;
+          }
         }
         state.annualYear = new Date().getFullYear();
 
+        monthlyModule.applyMonthOptions(monthlyModule.monthKey());
         monthlyModule.syncOptionsUI();
         const restoredOverrides = standardsModule.loadOverrides();
-        subscriptionsModule.ensureMonth();
         subscriptionsModule.syncCurrentMonth();
         state.calcResult = resultsModule.loadResultForMonth(monthlyModule.monthKey());
 
@@ -442,6 +473,13 @@
         service.renderAll();
         if (state.calcResult) resultsModule.renderResult();
         else resultsModule.clearResult();
+        if (recoverLocalChanges) {
+          const recovered = await persistenceModule.persist('now');
+          feedbackModule.toast(
+            recovered ? '已恢复并同步本浏览器的未上传修改' : '已恢复本机修改，但同步服务器失败，请稍后再次保存',
+            recovered ? 'success' : 'warn',
+          );
+        }
         // 默认选中第一个地点，方便直接开始添加行程
         if (state.meta.locations.length) calendarModule.selectLocation(state.meta.locations[0].key);
 

@@ -6,6 +6,8 @@ from fastapi import Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from urllib.parse import urlsplit
 from application import budget as app_budget
 from application import config as app_config
 from application import contracts as app_contracts
@@ -21,6 +23,38 @@ logger = logging.getLogger("budget-web")
 from fastapi import FastAPI
 
 app = FastAPI(title="多币种旅行预算计算器", docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"],
+)
+
+
+def _same_local_origin(origin: str, request) -> bool:
+    """浏览器写请求只能来自当前回环地址与端口；无 Origin 的本机脚本仍可用。"""
+    try:
+        parsed = urlsplit(origin)
+        request_host = request.url.hostname
+        request_port = request.url.port
+        origin_port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    return (
+        parsed.scheme in ("http", "https")
+        and parsed.hostname in ("127.0.0.1", "localhost", "::1")
+        and parsed.hostname == request_host
+        and origin_port == request_port
+    )
+
+
+@app.middleware("http")
+async def _guard_local_write_origin(request, call_next):
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        if origin and not _same_local_origin(origin, request):
+            return JSONResponse(status_code=403, content={
+                "error": {"code": "ORIGIN_REJECTED", "message": "拒绝非本机同源写请求"},
+            })
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -71,6 +105,20 @@ async def _repository_upload_error_handler(request, exc: app_contracts.Repositor
 async def _state_conflict_error_handler(request, exc: app_contracts.StateConflictError):
     return JSONResponse(status_code=409, content={
         "error": {"code": "STATE_CONFLICT", "message": str(exc)},
+    })
+
+
+@app.exception_handler(app_contracts.StateSaveError)
+async def _state_save_error_handler(request, exc: app_contracts.StateSaveError):
+    return JSONResponse(status_code=500, content={
+        "error": {"code": "STATE_SAVE_FAILED", "message": str(exc)},
+    })
+
+
+@app.exception_handler(app_contracts.ResourceNotFoundError)
+async def _not_found_error_handler(request, exc: app_contracts.ResourceNotFoundError):
+    return JSONResponse(status_code=404, content={
+        "error": {"code": "NOT_FOUND", "message": str(exc)},
     })
 
 
@@ -133,14 +181,64 @@ def api_data_upload(body: app_contracts.DataUploadRequest):
     return app_repository.data_upload(body)
 
 
-@app.get('/api/state')
-def api_get_state():
-    return app_state.get_state()
+@app.get('/api/months')
+def api_get_months():
+    return app_state.get_months()
 
 
-@app.put('/api/state')
-def api_put_state(body: app_contracts.AppStateIn):
-    return app_state.put_state(body)
+@app.get('/api/months/{month}')
+def api_get_month(month: str):
+    return app_state.get_month(month)
+
+
+@app.post('/api/months/{month}/ensure')
+def api_ensure_month(month: str, body: app_contracts.MonthEnsureIn):
+    return app_state.ensure_month(month, body)
+
+
+@app.put('/api/months/{month}')
+def api_put_month(month: str, body: app_contracts.MonthStateWriteIn):
+    return app_state.put_month(month, body)
+
+
+@app.delete('/api/months/{month}')
+def api_delete_month(month: str, body: app_contracts.MonthDeleteIn):
+    return app_state.delete_month(month, body)
+
+
+@app.post('/api/months/{month}/calculate')
+def api_calculate_month(month: str, body: app_contracts.StoredMonthCalculateIn):
+    return app_budget.calculate_stored_month(month, body)
+
+
+@app.get('/api/global')
+def api_get_global():
+    return app_state.get_global()
+
+
+@app.put('/api/global')
+def api_put_global(body: app_contracts.GlobalStateWriteIn):
+    return app_state.put_global(body)
+
+
+@app.put('/api/global/selection')
+def api_put_global_selection(body: app_contracts.MonthSelectionIn):
+    return app_state.put_selection(body)
+
+
+@app.post('/api/state/clear')
+def api_clear_state(body: app_contracts.StateClearIn):
+    return app_state.clear_all(body)
+
+
+@app.get('/api/backups')
+def api_list_backups():
+    return app_state.list_backups()
+
+
+@app.post('/api/backups/restore')
+def api_restore_backup(body: app_contracts.BackupRestoreIn):
+    return app_state.restore_backup(body)
 
 
 @app.get('/api/meta')
@@ -171,11 +269,6 @@ def api_asset_rates(currencies: str | None=Query(default='HKD,USD', description=
 @app.post('/api/annual-budget')
 def api_annual_budget(req: app_contracts.AnnualBudgetRequest):
     return app_budget.annual_budget(req)
-
-
-@app.post('/api/calculate')
-def api_calculate(req: app_contracts.CalculateRequest):
-    return app_budget.calculate(req)
 
 
 # 静态挂载最后注册，避免遮挡 API。

@@ -16,11 +16,9 @@
         month: 0,                 // 1-12
         region: 'Mainland',
         standards: { variable: {}, fixed: {}, travel: {}, extra: {} }, // 当前生效标准（默认 + 覆盖）
-        itineraryByMonth: {},     // { 'YYYY-MM': { location: [{start, end}] } }
-        optionsByMonth: {},       // { 'YYYY-MM': { region, includeTravel, travelSelected } }
-        overridesByMonth: {},     // { 'YYYY-MM': 完整标准快照；兼容读取旧版差异 }
-        resultsByMonth: {},       // { 'YYYY-MM': 计算结果（不含汇率明细） }
-        subscriptionsByMonth: {}, // { 'YYYY-MM': {items: 逐月快照, retiredIds: 永久取消项目 ID} }
+        // v2 唯一月度真源：每个键对应一个完整、带 revision 的月份实体。
+        monthsByKey: {},
+        globalRevision: 0,
         annualBudgetsByYear: {},  // { 'YYYY': { currency: 全年当地金额 } }
         annualResultsByYear: {},  // { 'YYYY': 紧凑全年计算结果（不含原始汇率序列） }
         assetPortfoliosById: {},  // { current: {calculationBase:{CNY,HKD,USD}, rates, items} }
@@ -50,7 +48,7 @@
         editingDefaults: false,
         defaultsDraft: null,
         // 默认标准弹窗的显示范围：false=只显示本月旅居地点，true=显示全部旅居预算。
-        // 纯界面偏好，只存在于内存（不写 app-state.json / localStorage，也不进草稿）。
+        // 纯界面偏好，只存在于内存（不写 v2 实体 / localStorage，也不进草稿）。
         defaultsShowAll: false,
       };
 

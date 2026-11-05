@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from fastapi.responses import JSONResponse
 import os
 import threading
 import time
@@ -20,7 +19,7 @@ AUTO_SHUTDOWN_ENABLED = True
 
 
 
-SHUTDOWN_GRACE_SECONDS = 0.0
+SHUTDOWN_GRACE_SECONDS = 2.0
 
 
 
@@ -28,7 +27,7 @@ _SHUTDOWN_FLUSH_SECONDS = 0.3
 
 
 
-_TAB_LEASE_SECONDS = 20.0
+_TAB_LEASE_SECONDS = 300.0
 
 
 
@@ -73,7 +72,7 @@ def _arm_shutdown_timer() -> None:
 def _finish_shutdown() -> bool:
     """等待最终写入、生成退出备份，再结束进程；备份失败时保留服务。"""
     logger.info("所有浏览器页面均已关闭，正在完成保存与退出备份。")
-    # 等正在写入的 app-state.json 完成，避免 Windows 上 replace 被中途杀掉。
+    # 等正在写入月份/全局实体完成，避免 Windows 上 replace 被中途杀掉。
     acquired = app_state.state_disk_lock.acquire(timeout=2.0)
     if acquired:
         app_state.state_disk_lock.release()
@@ -162,29 +161,16 @@ def api_tabs_heartbeat(body: app_contracts.TabRegisterIn):
 
 
 def api_tabs_unregister(body: app_contracts.TabRegisterIn):
-    """页面关闭时注销；先写入本次行程，再在最后一个页面关闭后停止服务。"""
-    state_saved = True
+    """页面关闭时注销；先保存 v2 脏实体，再在最后一个页面关闭后停止服务。"""
+    # 超过浏览器 sendBeacon/fetch keepalive 限额时，页面只能留下本机镜像并
+    # 发送轻量注销。此时保持服务运行，避免把尚未同步的修改误当成已保存。
+    state_saved = not body.state_omitted
     if isinstance(body.state, dict) and body.state:
         try:
-            payload = dict(body.state)
-            payload.pop("replace", None)
-            base_values = payload.pop("baseValues", None)
-            state_tab_id = payload.pop("tabId", None)
-            sequence = payload.pop("sequence", None)
-            if state_tab_id is not None and state_tab_id != body.tab_id:
-                raise ValueError("关闭页面状态的 tabId 与注销标签页不一致")
-            app_state.save_app_state(
-                payload,
-                replace=False,
-                base_values=base_values,
-                tab_id=state_tab_id,
-                sequence=sequence,
-                allow_partial_conflicts=True,
-            )
-        except app_contracts.StateConflictError as exc:
-            # 旧标签页关闭时不能覆盖其它标签页刚保存的同一月份/年份；冲突键
-            # 已安全拒绝，因此仍可完成注销，不把服务误留在后台。
-            logger.warning("关闭页面时忽略旧状态快照：%s", exc)
+            saved = app_state.save_final_bundle(body.state, allow_partial_conflicts=True)
+            if saved["conflicts"]:
+                logger.warning("关闭页面时忽略冲突实体：%s", ", ".join(saved["conflicts"]))
+                state_saved = False
         except Exception:
             state_saved = False
             logger.exception("关闭页面前保存行程失败")
@@ -198,13 +184,9 @@ def api_tabs_unregister(body: app_contracts.TabRegisterIn):
         else:
             _cancel_shutdown_timer()
     if not state_saved:
-        return JSONResponse(status_code=500, content={
-            "error": {
-                "code": "STATE_SAVE_FAILED",
-                "message": "关闭前保存数据失败，服务将保持运行以避免数据丢失",
-            },
-            "open_tabs": count,
-        })
+        raise app_contracts.StateSaveError(
+            "关闭前状态未能完整传输，服务将保持运行以避免数据丢失"
+        )
     return {"open_tabs": count}
 
 

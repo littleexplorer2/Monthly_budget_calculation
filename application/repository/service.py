@@ -25,7 +25,7 @@ _GIT_COMMAND_TIMEOUT = 30
 _GIT_PUSH_TIMEOUT = 120
 
 
-UPLOAD_DATA_FILES = ("app-state.json", "defaults.json")
+UPLOAD_DATA_FILES = ("global.json", "months", "defaults.json", "app-state.json")
 
 
 
@@ -99,7 +99,8 @@ def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR,
                            *, user_confirmed: bool = False) -> dict:
     """经本次用户确认后提交预算/行程状态与用户默认标准，再推送当前分支。
 
-    ``data/rates`` 是可从 Yahoo Finance 重建的本机缓存，既不暂存也不提交。
+    ``data/rates`` 是可重建缓存，``data/legacy`` 是本机迁移证据；二者均不上传。
+    ``app-state.json`` 只作为删除路径加入，以便远程仓库完成 v1 → v2 替换。
     """
     if user_confirmed is not True:
         raise app_contracts.RepositoryUploadError("上传用户数据前必须取得用户明确确认")
@@ -108,8 +109,17 @@ def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR,
         if not (base_dir / "data").is_dir():
             raise app_contracts.RepositoryUploadError("项目 data 目录不存在，无法上传")
 
-        upload_paths = [f"{data_relative}/{name}" for name in UPLOAD_DATA_FILES]
-        # 等预算/行程状态写盘完成，再截取两个权威用户数据文件；汇率缓存不参与上传。
+        candidates = [f"{data_relative}/{name}" for name in UPLOAD_DATA_FILES]
+        upload_paths = []
+        for relative in candidates:
+            absolute = root / Path(relative)
+            tracked = bool(_run_git(["ls-files", "--", relative], root).stdout.strip())
+            if absolute.exists() or tracked:
+                upload_paths.append(relative)
+        if not upload_paths:
+            raise app_contracts.RepositoryUploadError("没有可上传的权威用户数据文件")
+        # 等状态写盘完成，再截取 v2 全局/月份实体与默认配置；汇率缓存和
+        # 本机 legacy 迁移归档均不参与上传。
         with app_state.state_disk_lock, app_defaults.defaults_disk_lock:
             _run_git(["add", "-A", "--", *upload_paths], root)
         changed = _run_git(

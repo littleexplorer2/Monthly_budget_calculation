@@ -12,6 +12,7 @@ from .service import (
     defaults_are_customized,
     defaults_load_error,
     load_saved_defaults,
+    normalize_defaults_document,
     resolve_standards,
     restore_builtin_defaults,
     save_default_standards,
@@ -25,6 +26,7 @@ __all__ = [
     "DefaultsRevisionConflict", "default_standards_snapshot", "defaults_are_customized",
     "defaults_disk_lock",
     "defaults_load_error", "load_saved_defaults", "resolve_standards",
+    "normalize_defaults_document",
     "restore_builtin_defaults", "save_default_standards", "saved_currency_names",
     "saved_location_names",
 ]

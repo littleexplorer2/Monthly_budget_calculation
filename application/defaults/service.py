@@ -49,6 +49,20 @@ def _refresh_all_budget_locations() -> None:
     ALL_BUDGET_LOCATIONS.update({**VARIABLE_BUDGET_STANDARDS, **TRAVEL_BUDGET_STANDARDS})
 
 
+def _reset_runtime_to_builtin() -> None:
+    """只重置进程内默认值；不会删除或改写用户文件。调用方须持有默认值锁。"""
+    global _SUBSCRIPTIONS_CONFIGURED
+    _replace_mapping(VARIABLE_BUDGET_STANDARDS, _BUILTIN_VARIABLE_BUDGET_STANDARDS)
+    _replace_mapping(FIXED_BUDGET_STANDARDS, _BUILTIN_FIXED_BUDGET_STANDARDS)
+    _replace_mapping(EXTRA_BUDGET_STANDARDS, _BUILTIN_EXTRA_BUDGET_STANDARDS)
+    _replace_mapping(TRAVEL_BUDGET_STANDARDS, _BUILTIN_TRAVEL_BUDGET_STANDARDS)
+    _SAVED_LOCATION_NAMES.clear()
+    _SAVED_CURRENCY_NAMES.clear()
+    _DEFAULT_SUBSCRIPTIONS.clear()
+    _SUBSCRIPTIONS_CONFIGURED = False
+    _refresh_all_budget_locations()
+
+
 def saved_location_names() -> dict[str, str]:
     with _DEFAULTS_LOCK:
         return dict(_SAVED_LOCATION_NAMES)
@@ -176,6 +190,11 @@ def _normalize_complete_defaults_payload(payload: dict) -> dict:
     return normalized
 
 
+def normalize_defaults_document(payload: dict) -> dict:
+    """只校验并规范一个完整默认配置文档，不读取或写入生产文件。"""
+    return _normalize_complete_defaults_payload(payload)
+
+
 def _apply_defaults_dict(data: dict, *, subscriptions_configured: bool | None = None) -> None:
     global _SUBSCRIPTIONS_CONFIGURED
     _replace_mapping(VARIABLE_BUDGET_STANDARDS, data["variable"])
@@ -198,6 +217,11 @@ def save_default_standards(payload: dict, expected_revision: str | None = None) 
     """把完整标准快照校验后写入 data/defaults.json，并立即作为模块默认值生效。"""
     global _DEFAULTS_LOADED_FROM_FILE, _DEFAULTS_LOAD_ERROR
     with _DEFAULTS_LOCK:
+        if _DEFAULTS_LOAD_ERROR and _DEFAULTS_FILE.exists():
+            raise ValueError(
+                "data/defaults.json 已损坏；为避免覆盖原始证据，保存已拒绝。"
+                "请先复制该文件并显式恢复出厂默认值"
+            )
         current_revision = default_standards_snapshot()["revision"]
         if expected_revision is not None and expected_revision != current_revision:
             raise DefaultsRevisionConflict(
@@ -225,15 +249,7 @@ def restore_builtin_defaults(expected_revision: str | None = None) -> None:
                 _DEFAULTS_FILE.unlink()
             except OSError as exc:
                 raise ValueError(f"删除默认标准文件失败：{exc}") from exc
-        _replace_mapping(VARIABLE_BUDGET_STANDARDS, _BUILTIN_VARIABLE_BUDGET_STANDARDS)
-        _replace_mapping(FIXED_BUDGET_STANDARDS, _BUILTIN_FIXED_BUDGET_STANDARDS)
-        _replace_mapping(EXTRA_BUDGET_STANDARDS, _BUILTIN_EXTRA_BUDGET_STANDARDS)
-        _replace_mapping(TRAVEL_BUDGET_STANDARDS, _BUILTIN_TRAVEL_BUDGET_STANDARDS)
-        _SAVED_LOCATION_NAMES.clear()
-        _SAVED_CURRENCY_NAMES.clear()
-        _DEFAULT_SUBSCRIPTIONS.clear()
-        _SUBSCRIPTIONS_CONFIGURED = False
-        _refresh_all_budget_locations()
+        _reset_runtime_to_builtin()
         _DEFAULTS_LOADED_FROM_FILE = False
         _DEFAULTS_LOAD_ERROR = None
 
@@ -242,6 +258,9 @@ def load_saved_defaults() -> bool:
     """启动时校验并加载 data/defaults.json；损坏时保留出厂值并记录错误。"""
     global _DEFAULTS_LOADED_FROM_FILE, _DEFAULTS_LOAD_ERROR
     with _DEFAULTS_LOCK:
+        # 该函数也供备份恢复后重载；先清空旧进程状态，避免文件缺失或损坏时
+        # 继续沿用恢复前的自定义值。
+        _reset_runtime_to_builtin()
         try:
             data = _read_defaults_file()
         except ValueError as exc:

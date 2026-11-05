@@ -51,8 +51,15 @@ def _list_rate_months() -> list[str]:
     if not RATES_DATA_DIR.exists():
         return []
     months = []
+    today = dt.date.today()
     for p in RATES_DATA_DIR.iterdir():
-        if p.is_file() and p.suffix.lower() == ".json" and re.fullmatch(r"\d{4}-\d{2}", p.stem):
+        match = re.fullmatch(r"(\d{4})-(\d{2})", p.stem)
+        if not p.is_file() or p.suffix.lower() != ".json" or match is None:
+            continue
+        year, month = (int(part) for part in match.groups())
+        if not (2000 <= year <= 2100 and 1 <= month <= 12):
+            continue
+        if (year, month) <= (today.year, today.month):
             months.append(p.stem)
     return sorted(set(months))
 
@@ -143,20 +150,21 @@ def _disk_currency_cache_is_fresh(data: dict, currency: str, year: int, month: i
             or meta.get("rate_kind") != "monthly_open_close_estimate"):
         return False
     expected_end = month_end if (year, month) < (today.year, today.month) else min(today, month_end)
-    if isinstance(meta, dict):
-        # schema=1 由本程序按自然日完整写入。中间任意日期缺失或值损坏都说明
-        # 文件被截断/篡改，不能再用前后两个点 ffill 成一整月的伪数据。
-        expected_dates = {
-            (month_start + dt.timedelta(days=offset)).isoformat()
-            for offset in range((expected_end - month_start).days + 1)
-        }
-        if not expected_dates.issubset(currency_data):
+    if expected_end < month_start:
+        return False
+    # 旧缓存也必须逐日完整且为有效正数；只检查首尾会把中间缺口交给
+    # fill_month_rate_series 伪造成一整月数据。
+    expected_dates = {
+        (month_start + dt.timedelta(days=offset)).isoformat()
+        for offset in range((expected_end - month_start).days + 1)
+    }
+    if not expected_dates.issubset(currency_data):
+        return False
+    for day in expected_dates:
+        value = currency_data.get(day)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(float(value)) or float(value) <= 0):
             return False
-        for day in expected_dates:
-            value = currency_data.get(day)
-            if (isinstance(value, bool) or not isinstance(value, (int, float))
-                    or not math.isfinite(float(value)) or float(value) <= 0):
-                return False
     if (year, month) < (today.year, today.month):
         # 历史缓存可能是在当月中途生成后一直未刷新；只有确实覆盖月末
         # 才能视为完整。旧版无 _meta 的完整缓存仍可继续使用。
@@ -168,7 +176,7 @@ def _disk_currency_cache_is_fresh(data: dict, currency: str, year: int, month: i
 
 
 
-def _series_from_disk(data: dict, start: str, end: str) -> pd.Series:
+def _series_from_disk(data: dict, start: str, end: str, *, as_of: dt.date) -> pd.Series:
     """从磁盘缓存构造整月汇率序列（缺失日期用最近可用值填充）。"""
     index = pd.date_range(start, end)
     series = pd.Series(
@@ -176,7 +184,7 @@ def _series_from_disk(data: dict, start: str, end: str) -> pd.Series:
         index=index,
         dtype="float64",
     )
-    completed = rates_core.fill_month_rate_series(series, start, end)
+    completed = rates_core.fill_month_rate_series(series, start, end, as_of=as_of)
     if completed is None:
         raise app_contracts.RateFetchError(f"磁盘汇率缓存没有 {start} 至 {end} 的有效数据")
     return completed
@@ -184,7 +192,8 @@ def _series_from_disk(data: dict, start: str, end: str) -> pd.Series:
 
 
 def _fetch_rates_parallel(currencies: list[str], start: str, end: str,
-                          max_workers: int = 4, refresh: bool = False) -> dict[str, pd.Series]:
+                          max_workers: int = 4, refresh: bool = False,
+                          as_of: dt.date | None = None) -> dict[str, pd.Series]:
     """获取整月多币种汇率。
 
     refresh=False：进程内缓存 → 磁盘缓存 → 仅下载缺失币种并回写磁盘。
@@ -193,6 +202,7 @@ def _fetch_rates_parallel(currencies: list[str], start: str, end: str,
     """
     if not currencies:
         return {}
+    current_day = as_of or dt.date.today()
     year, month = int(start[:4]), int(start[5:7])
 
     rates: dict[str, pd.Series] = {}
@@ -214,7 +224,9 @@ def _fetch_rates_parallel(currencies: list[str], start: str, end: str,
                 if (curr in disk_data and disk_data[curr]
                         and _disk_currency_cache_is_fresh(disk_data, curr, year, month)):
                     try:
-                        rates[curr] = _series_from_disk(disk_data[curr], start, end)
+                        rates[curr] = _series_from_disk(
+                            disk_data[curr], start, end, as_of=current_day,
+                        )
                     except (app_contracts.RateFetchError, TypeError, ValueError) as exc:
                         # 单个缓存条目损坏时把它当成 miss 并重新下载；缓存不是
                         # 用户输入，不能让可修复的本地缓存错误映射成请求参数 400。
@@ -229,7 +241,7 @@ def _fetch_rates_parallel(currencies: list[str], start: str, end: str,
 
         def _download_one(curr: str) -> pd.Series:
             return rates_core.get_historical_rates_cached(
-                [curr], start, end, force=refresh,
+                [curr], start, end, as_of=current_day, force=refresh,
             )[curr]
 
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rates") as pool:
@@ -270,15 +282,15 @@ def _fetch_budget_rates(currencies: list[str], year: int, month: int,
     app_contracts.validate_year_month(year, month)
     start, end = app_contracts.month_bounds(year, month)
     requested_month = f"{year:04d}-{month:02d}"
+    current_day = today or dt.date.today()
     try:
-        rates = _fetch_rates_parallel(currencies, start, end)
+        rates = _fetch_rates_parallel(currencies, start, end, as_of=current_day)
         return rates, {
             "kind": "current_month",
             "requested_month": requested_month,
             "fallback": False,
         }
     except app_contracts.RateFetchError as current_error:
-        current_day = today or dt.date.today()
         if ((year, month) != (current_day.year, current_day.month)
                 or current_day.day != 1):
             raise
@@ -290,7 +302,7 @@ def _fetch_budget_rates(currencies: list[str], year: int, month: int,
         source_month = f"{previous_year:04d}-{previous_month:02d}"
         try:
             previous_rates = _fetch_rates_parallel(
-                currencies, previous_start, previous_end,
+                currencies, previous_start, previous_end, as_of=current_day,
             )
             target_index = pd.date_range(start, end)
             fallback_rates: dict[str, pd.Series] = {}

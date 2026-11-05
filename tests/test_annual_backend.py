@@ -81,7 +81,9 @@ class AnnualRateAlgorithmTests(unittest.TestCase):
             index=pd.to_datetime(["2026-01-02"]),
         )
 
-        rates = core_rates_normalization._normalize_rate_frame(frame, "2026-01-02", "2026-01-02")
+        rates = core_rates_normalization._normalize_rate_frame(
+            frame, "2026-01-02", "2026-01-02", as_of="2026-01-02",
+        )
 
         self.assertEqual(list(rates.index), list(pd.to_datetime(["2026-01-02"])))
         self.assertEqual(rates.tolist(), [3.0])
@@ -157,11 +159,11 @@ class AnnualRateAlgorithmTests(unittest.TestCase):
                 {"USD": 7.0},
             )
 
-    def test_annual_bounds_stop_at_today_and_reject_future_years(self):
+    def test_annual_bounds_stop_at_last_completed_day_and_reject_future_years(self):
         with mock.patch.object(contracts_service.dt, "date", _FixedDate):
             self.assertEqual(
                 contracts_service._annual_bounds(2026),
-                ("2026-01-01", "2026-09-28"),
+                ("2026-01-01", "2026-09-27"),
             )
             self.assertEqual(
                 contracts_service._annual_bounds(2025),
@@ -173,18 +175,17 @@ class AnnualRateAlgorithmTests(unittest.TestCase):
     def test_trailing_year_bounds_cover_exactly_365_calendar_days(self):
         with mock.patch.object(contracts_service.dt, "date", _FixedDate):
             start, end = contracts_service._trailing_year_bounds()
-        self.assertEqual((start, end), ("2025-09-29", "2026-09-28"))
+        self.assertEqual((start, end), ("2025-09-28", "2026-09-27"))
         self.assertEqual(
             (real_datetime.date.fromisoformat(end) - real_datetime.date.fromisoformat(start)).days + 1,
             365,
         )
 
-    def test_failed_force_refresh_evicts_old_annual_close_cache(self):
+    def test_failed_force_refresh_preserves_last_valid_annual_close_cache(self):
         key = core_rates_cache._rates_cache_key(
             "ZZZ", "2026-01-01", "2026-09-28", "daily_close",
         )
         old = pd.Series([1.0], index=pd.to_datetime(["2026-01-02"]))
-        fresh = pd.Series([2.0], index=pd.to_datetime(["2026-01-02"]))
         with core_rates_cache._RATES_CACHE_LOCK:
             core_rates_cache._RATES_CACHE[key] = (real_datetime.datetime.now().timestamp(), old)
         try:
@@ -195,16 +196,16 @@ class AnnualRateAlgorithmTests(unittest.TestCase):
                     rate_kind="daily_close", force=True,
                 )
             with core_rates_cache._RATES_CACHE_LOCK:
-                self.assertNotIn(key, core_rates_cache._RATES_CACHE)
+                self.assertIs(core_rates_cache._RATES_CACHE[key][1], old)
                 self.assertNotIn(key, core_rates_cache._RATES_CACHE_REFRESHING)
 
-            fetch = mock.Mock(return_value={"ZZZ": fresh})
+            fetch = mock.Mock()
             result = core_rates_cache._get_historical_rates_cached(
                 ["ZZZ"], "2026-01-01", "2026-09-28",
                 fetcher=fetch, rate_kind="daily_close",
             )
-            fetch.assert_called_once()
-            self.assertEqual(float(result["ZZZ"].iloc[0]), 2.0)
+            fetch.assert_not_called()
+            self.assertEqual(float(result["ZZZ"].iloc[0]), 1.0)
         finally:
             with core_rates_cache._RATES_CACHE_LOCK:
                 core_rates_cache._RATES_CACHE.pop(key, None)
@@ -313,327 +314,55 @@ class AnnualStateTests(unittest.TestCase):
             ({"month": 13}, "app-state.month"),
             ({"resultsByMonth": []}, "app-state.resultsByMonth"),
             ({"annualBudgetsByYear": []}, "app-state.annualBudgetsByYear"),
+            ({"itineraryByMonth": {"2026-13": {}}}, "itineraryByMonth 月份无效"),
+            ({"optionsByMonth": {"2026-00": {}}}, "optionsByMonth 月份无效"),
+            ({"overridesByMonth": {"not-a-month": {}}}, "overridesByMonth 月份无效"),
+            ({"resultsByMonth": {"2026-1": {}}}, "resultsByMonth 月份无效"),
+            ({"optionsByMonth": {"2026-09": []}}, "optionsByMonth.2026-09 必须是对象"),
         ]
         for payload, message in invalid_payloads:
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(ValueError, message):
                     state_service._normalize_app_state(payload)
 
-    def test_existing_but_corrupt_app_state_is_not_silently_treated_as_empty(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "app-state.json"
-            path.write_text("{not-json", encoding="utf-8")
-            with mock.patch.object(state_service, "APP_STATE_FILE", path):
-                with self.assertRaisesRegex(ValueError, "JSON 文件无法读取或已损坏"):
-                    state_service._read_app_state_file()
-
-    def test_annual_empty_object_is_a_merge_tombstone(self):
-        annual_result = {
-            "summary": {"全年预算合计(人民币)": 7.0},
-            "details": [{
-                "currency": "USD", "amount": 1.0,
-                "average_rate": 7.0, "cny_amount": 7.0,
-            }],
-        }
-        disk = {
-            "annualBudgetsByYear": {"2026": {"USD": 1.0}, "2025": {"USD": 2.0}},
-            "annualResultsByYear": {"2026": annual_result, "2025": annual_result},
-        }
-        merged = state_service._merge_app_state(disk, {
-            "annualBudgetsByYear": {"2026": {}},
-            "annualResultsByYear": {"2026": {}},
-        })
-        self.assertNotIn("2026", merged["annualBudgetsByYear"])
-        self.assertNotIn("2026", merged["annualResultsByYear"])
-        self.assertIn("2025", merged["annualBudgetsByYear"])
-        self.assertIn("2025", merged["annualResultsByYear"])
-
-        replaced = state_service._merge_app_state(disk, {
-            "annualBudgetsByYear": {"2026": {}},
-            "annualResultsByYear": {"2026": {}},
-        }, replace=True)
-        self.assertEqual(replaced["annualBudgetsByYear"], {})
-        self.assertEqual(replaced["annualResultsByYear"], {})
-
-    def test_state_patch_rejects_stale_same_key_but_allows_other_month(self):
-        disk = state_service._normalize_app_state({
-            "itineraryByMonth": {
-                "2026-01": {"A": [{"start": "2026-01-01", "end": "2026-01-01"}]},
-                "2026-02": {"B": [{"start": "2026-02-01", "end": "2026-02-01"}]},
-            },
-        })
-        stale_january = {
-            "itineraryByMonth": {
-                "2026-01": {
-                    "exists": True,
-                    "value": {"A": [{"start": "2026-01-02", "end": "2026-01-02"}]},
-                },
-            },
-        }
-        with self.assertRaisesRegex(contracts_service.StateConflictError, "2026-01"):
-            state_service._assert_state_patch_base(disk, stale_january)
-
-        current_february = {
-            "itineraryByMonth": {
-                "2026-02": {
-                    "exists": True,
-                    "value": disk["itineraryByMonth"]["2026-02"],
-                },
-            },
-        }
-        state_service._assert_state_patch_base(disk, current_february)
-
-    def test_state_year_and_month_must_be_updated_as_a_pair(self):
-        with self.assertRaisesRegex(ValueError, "必须成对提交"):
-            state_service._merge_app_state({}, {"year": 2026})
-        with self.assertRaisesRegex(ValueError, "必须成对提交"):
-            state_service._merge_app_state({}, {"month": 9})
-
-    def test_state_patch_requires_base_marker_for_every_written_key(self):
-        disk = state_service._normalize_app_state({
-            "year": 2026,
-            "month": 9,
-            "resultsByMonth": {"2026-09": {"summary": {"total": 1}}},
-        })
-        year_marker = {"exists": True, "value": 2026}
-        month_marker = {"exists": True, "value": 9}
-
-        with self.assertRaisesRegex(ValueError, "baseValues.year.*month.*成对提交"):
-            state_service._assert_state_patch_base(
-                disk,
-                {"year": year_marker},
-                {"year": 2026, "month": 10},
-            )
-        with self.assertRaisesRegex(ValueError, "baseValues.*resultsByMonth.*2026-09"):
-            state_service._assert_state_patch_base(
-                disk,
-                {},
-                {"resultsByMonth": {"2026-09": {"summary": {"total": 2}}}},
-            )
-
-        # 完整 marker 可通过；完全不提供 baseValues 的旧客户端仍保持兼容。
-        state_service._assert_state_patch_base(
-            disk,
-            {"year": year_marker, "month": month_marker},
-            {"year": 2026, "month": 10},
-        )
-        state_service._assert_state_patch_base(
-            disk,
-            None,
-            {"resultsByMonth": {"2026-09": {"summary": {"total": 2}}}},
-        )
-
-    def test_late_older_sequence_cannot_overwrite_final_same_tab_state(self):
-        month = "2026-09"
-        tab_id = "tab-reverse-arrival"
-        old_result = {"summary": {"total": 1}}
-        stale_result = {"summary": {"total": 2}}
-        base_values = {
-            "resultsByMonth": {
-                month: {"exists": True, "value": old_result},
-            },
-        }
-        disk = state_service._normalize_app_state({
-            "year": 2026,
-            "month": 9,
-            "resultsByMonth": {month: old_result},
-        })
-
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "app-state.json"
-            path.write_text(json.dumps(disk, ensure_ascii=False), encoding="utf-8")
-            try:
-                with mock.patch.object(state_service, "APP_STATE_FILE", path):
-                    # 最终请求（序号 2）先到。它显式确认最终值仍为基线 1；
-                    # 若没有同 tab 序号保护，随后到达的旧请求仍会通过 value CAS。
-                    final = state_service._save_app_state(
-                        {"resultsByMonth": {month: old_result}},
-                        base_values=base_values,
-                        tab_id=tab_id,
-                        sequence=2,
-                    )
-                    self.assertEqual(
-                        final["resultsByMonth"][month]["summary"]["total"], 1,
-                    )
-
-                    late = state_service._save_app_state(
-                        {"resultsByMonth": {month: stale_result}},
-                        base_values=base_values,
-                        tab_id=tab_id,
-                        sequence=1,
-                    )
-                    self.assertEqual(
-                        late["resultsByMonth"][month]["summary"]["total"], 1,
-                    )
-                    persisted = state_service._normalize_app_state(
-                        json.loads(path.read_text(encoding="utf-8"))
-                    )
-                    self.assertEqual(
-                        persisted["resultsByMonth"][month]["summary"]["total"], 1,
-                    )
-            finally:
-                state_service._state_write_sequences.pop(tab_id, None)
-
-        with self.assertRaisesRegex(ValueError, "sequence"):
-            state_service._validate_state_write_identity(tab_id, None)
-        with self.assertRaisesRegex(ValueError, "tabId"):
-            state_service._validate_state_write_identity(None, 1)
-
-    def test_conflicting_group_makes_normal_put_atomic(self):
-        tab_id = "tab-partial-safe"
-        month = "2026-09"
-        disk = state_service._normalize_app_state({
-            "resultsByMonth": {month: {"summary": {"total": 2}}},
-        })
-        payload = {
-            "resultsByMonth": {month: {"summary": {"total": 3}}},
-            "annualBudgetsByYear": {"2026": {"USD": 100.0}},
-        }
-        base_values = {
-            "resultsByMonth": {
-                month: {"exists": True, "value": {"summary": {"total": 1}}},
-            },
-            "annualBudgetsByYear": {
-                "2026": {"exists": False},
-            },
-        }
-
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "app-state.json"
-            path.write_text(json.dumps(disk, ensure_ascii=False), encoding="utf-8")
-            try:
-                with mock.patch.object(state_service, "APP_STATE_FILE", path):
-                    with self.assertRaisesRegex(
-                            contracts_service.StateConflictError, "本次请求未写入"):
-                        state_service._save_app_state(
-                            payload,
-                            base_values=base_values,
-                            tab_id=tab_id,
-                            sequence=1,
-                        )
-                persisted = state_service._normalize_app_state(
-                    json.loads(path.read_text(encoding="utf-8"))
-                )
-                self.assertEqual(
-                    persisted["resultsByMonth"][month]["summary"]["total"], 2,
-                )
-                self.assertNotIn("2026", persisted["annualBudgetsByYear"])
-            finally:
-                state_service._state_write_sequences.pop(tab_id, None)
-
-    def test_unregister_mode_salvages_only_nonconflicting_groups(self):
-        tab_id = "tab-unregister-partial"
-        month = "2026-09"
-        disk = state_service._normalize_app_state({
-            "resultsByMonth": {month: {"summary": {"total": 2}}},
-        })
-        payload = {
-            "resultsByMonth": {month: {"summary": {"total": 3}}},
-            "annualBudgetsByYear": {"2026": {"USD": 100.0}},
-        }
-        base_values = {
-            "resultsByMonth": {
-                month: {"exists": True, "value": {"summary": {"total": 1}}},
-            },
-            "annualBudgetsByYear": {"2026": {"exists": False}},
-        }
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "app-state.json"
-            path.write_text(json.dumps(disk, ensure_ascii=False), encoding="utf-8")
-            try:
-                with mock.patch.object(state_service, "APP_STATE_FILE", path):
-                    with self.assertRaisesRegex(
-                            contracts_service.StateConflictError, "其它无冲突月份/年度已保存"):
-                        state_service._save_app_state(
-                            payload,
-                            base_values=base_values,
-                            tab_id=tab_id,
-                            sequence=1,
-                            allow_partial_conflicts=True,
-                        )
-                persisted = state_service._normalize_app_state(
-                    json.loads(path.read_text(encoding="utf-8"))
-                )
-                self.assertEqual(
-                    persisted["resultsByMonth"][month]["summary"]["total"], 2,
-                )
-                self.assertEqual(
-                    persisted["annualBudgetsByYear"]["2026"], {"USD": 100.0},
-                )
-            finally:
-                state_service._state_write_sequences.pop(tab_id, None)
-
-    def test_unregister_forwards_state_tab_identity_and_sequence(self):
+    def test_unregister_forwards_v2_entity_bundle(self):
         tab_id = "tab-unregister-sequence"
+        final_bundle = {
+            "schemaVersion": 2,
+            "months": [{"month": "2026-09", "base_revision": 3, "data": {}}],
+        }
         body = contracts_service.TabRegisterIn(
             tab_id=tab_id,
-            state={
-                "version": 1,
-                "tabId": tab_id,
-                "sequence": 7,
-                "baseValues": {},
-            },
+            state=final_bundle,
         )
         with (
             mock.patch.object(lifecycle_service, "_open_tabs", {tab_id: 1.0}),
             mock.patch.object(lifecycle_service, "AUTO_SHUTDOWN_ENABLED", False),
             mock.patch.object(lifecycle_service, "_cancel_tab_expiry_timer_locked"),
-            mock.patch.object(state_api, "save_app_state", return_value={}) as save_state,
+            mock.patch.object(
+                state_api, "save_final_bundle", return_value={"saved": ["2026-09"], "conflicts": []},
+            ) as save_state,
         ):
             self.assertEqual(lifecycle_service.api_tabs_unregister(body), {"open_tabs": 0})
-        save_state.assert_called_once_with(
-            {"version": 1},
-            replace=False,
-            base_values={},
-            tab_id=tab_id,
-            sequence=7,
-            allow_partial_conflicts=True,
-        )
-
-    def test_state_patch_accepts_idempotent_target_and_pending_write_alternative(self):
-        disk = state_service._normalize_app_state({
-            "resultsByMonth": {"2026-09": {"summary": {"total": 2}}},
-        })
-        old = {"summary": {"total": 1}}
-        pending = {"summary": {"total": 2}}
-        final = {"summary": {"total": 3}}
-
-        # 上一请求已把目标 2 写入；相同旧基线的迟到重试是幂等的。
-        state_service._assert_state_patch_base(
-            disk,
-            {"resultsByMonth": {"2026-09": {"exists": True, "value": old}}},
-            {"resultsByMonth": {"2026-09": pending}},
-        )
-        # 最终 beacon 以旧基线 1 构造，但允许本标签页在途请求的目标 2。
-        state_service._assert_state_patch_base(
-            disk,
-            {"resultsByMonth": {"2026-09": {
-                "exists": True,
-                "value": old,
-                "alternatives": [{"exists": True, "value": pending}],
-            }}},
-            {"resultsByMonth": {"2026-09": final}},
-        )
-        with self.assertRaisesRegex(contracts_service.StateConflictError, "2026-09"):
-            state_service._assert_state_patch_base(
-                state_service._normalize_app_state({
-                    "resultsByMonth": {"2026-09": {"summary": {"total": 99}}},
-                }),
-                {"resultsByMonth": {"2026-09": {
-                    "exists": True,
-                    "value": old,
-                    "alternatives": [{"exists": True, "value": pending}],
-                }}},
-                {"resultsByMonth": {"2026-09": final}},
-            )
-
+        save_state.assert_called_once_with(final_bundle, allow_partial_conflicts=True)
 
 class MonthlyRateCacheTests(unittest.TestCase):
+    def test_rate_month_listing_hides_invalid_and_future_cache_names(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in ("2026-09.json", "2026-10.json", "2026-13.json", "not-a-month.json"):
+                (root / name).write_text("{}", encoding="utf-8")
+            with (
+                mock.patch.object(rates_service, "RATES_DATA_DIR", root),
+                mock.patch.object(rates_service.dt, "date", _FixedDate),
+            ):
+                self.assertEqual(rates_service._list_rate_months(), ["2026-09"])
+
     def test_current_month_memory_cache_expires_at_calendar_day_rollover(self):
         fetched_at = real_datetime.datetime(2026, 9, 27, 23, 59).timestamp()
         cached = (fetched_at, pd.Series([7.0], index=pd.to_datetime(["2026-09-27"])))
         now = real_datetime.datetime(2026, 9, 28, 0, 5).timestamp()
-        with mock.patch.object(core_rates_normalization.datetime, "date", _FixedDate):
+        with mock.patch.object(core_rates_cache.datetime, "date", _FixedDate):
             self.assertFalse(core_rates_cache._cached_rate_is_fresh(
                 cached, "2026-09-30", "monthly", ttl=3600, now=now,
             ))
@@ -689,7 +418,7 @@ class MonthlyRateCacheTests(unittest.TestCase):
             self.assertFalse(rates_service._disk_currency_cache_is_fresh(
                 missing_month_start, "USD", 2026, 8,
             ))
-            self.assertTrue(rates_service._disk_currency_cache_is_fresh(
+            self.assertFalse(rates_service._disk_currency_cache_is_fresh(
                 full_history, "USD", 2026, 8,
             ))
             self.assertTrue(rates_service._disk_currency_cache_is_fresh(

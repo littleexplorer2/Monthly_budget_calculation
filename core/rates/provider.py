@@ -9,7 +9,7 @@ import yfinance as yf
 from .normalization import _normalize_close_rate_frame, _normalize_rate_frame
 
 
-def _download_ticker_rates(ticker, start_date, end_date, normalizer):
+def _download_ticker_rates(ticker, start_date, end_date, normalizer, *, normalizer_kwargs=None):
     """下载单个 Yahoo ticker，并通过指定的月度/年度规范化器返回序列。"""
     end_dt = pd.to_datetime(end_date) + datetime.timedelta(days=1)  # Yahoo 的 end 为右开区间
     end_str = end_dt.strftime("%Y-%m-%d")
@@ -25,7 +25,9 @@ def _download_ticker_rates(ticker, start_date, end_date, normalizer):
     ]
     for attempt, fetch in enumerate(fetchers, start=1):
         try:
-            series = normalizer(fetch(), start_date, end_date)
+            series = normalizer(
+                fetch(), start_date, end_date, **(normalizer_kwargs or {}),
+            )
             if series is not None:
                 return series
             last_error = ValueError(f"下载后汇率数据集为空，无法获取汇率：{ticker}")
@@ -36,7 +38,8 @@ def _download_ticker_rates(ticker, start_date, end_date, normalizer):
     raise ValueError(f"无法下载汇率数据集：{ticker}") from last_error
 
 
-def _download_currency_rates(currency, start_date, end_date, normalizer, *, cny_calendar=True):
+def _download_currency_rates(currency, start_date, end_date, normalizer, *, cny_calendar=True,
+                             normalizer_kwargs=None):
     """下载单个币种并交给指定规范化器；月度/年度共用同一备援链。"""
     if currency == "CNY":
         # 月度算法需要完整日历轴；全年 Close 统计只需一个恒等汇率观测，
@@ -47,12 +50,18 @@ def _download_currency_rates(currency, start_date, end_date, normalizer, *, cny_
         return pd.Series(1.0, index=index, name="rate")
 
     ticker = f"{currency}CNY=X"
-    return _download_ticker_rates(ticker, start_date, end_date, normalizer)
+    return _download_ticker_rates(
+        ticker, start_date, end_date, normalizer,
+        normalizer_kwargs=normalizer_kwargs,
+    )
 
 
-def get_historical_rates(currencies, start_date, end_date):
+def get_historical_rates(currencies, start_date, end_date, *, as_of):
     return {
-        curr: _download_currency_rates(curr, start_date, end_date, _normalize_rate_frame)
+        curr: _download_currency_rates(
+            curr, start_date, end_date, _normalize_rate_frame,
+            normalizer_kwargs={"as_of": as_of},
+        )
         for curr in currencies
     }
 

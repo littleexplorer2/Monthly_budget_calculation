@@ -42,6 +42,22 @@ class DefaultsAtomicityTests(unittest.TestCase):
         after = defaults.default_standards_snapshot()
         self.assertEqual(after, before)
 
+    def test_corrupt_defaults_file_cannot_be_silently_overwritten(self):
+        before = defaults.default_standards_snapshot()
+        payload = self._payload(before)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "defaults.json"
+            path.write_text("{broken", encoding="utf-8")
+            with (
+                mock.patch.object(defaults, "_DEFAULTS_FILE", path),
+                mock.patch.object(defaults, "_DEFAULTS_LOAD_ERROR", "JSON 文件损坏"),
+            ):
+                with self.assertRaisesRegex(ValueError, "避免覆盖原始证据"):
+                    defaults.save_default_standards(
+                        payload, expected_revision=before["revision"],
+                    )
+            self.assertEqual(path.read_text(encoding="utf-8"), "{broken")
+
     def test_stale_full_defaults_snapshot_cannot_overwrite_another_tab(self):
         before = defaults.default_standards_snapshot()
         base_payload = self._payload(before)

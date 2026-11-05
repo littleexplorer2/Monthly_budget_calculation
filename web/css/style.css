@@ -261,6 +261,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .defaults-section h3 { margin: 0; font-size: 14px; }
 .defaults-editor .sheet-head { margin-top: 0; }
 .defaults-editor .row-list { margin-top: 8px; }
+.defaults-travel-block .row-list { margin-top: 4px; }
 
 /* ---------- 与默认值不同的标记 ---------- */
 .chip-diff {
@@ -787,7 +788,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .add-form .af-hint { color: var(--muted); font-size: 12px; }
 .data-list { overflow-y: auto; margin: 10px 0; }
+.data-section-title { margin: 14px 4px 4px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.data-section-title:first-child { margin-top: 2px; }
 .data-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.data-backup-row { align-items: flex-start; }
+.data-backup-empty { margin: 6px 4px 12px; }
 .data-month { font-weight: 700; }
 .tag { background: var(--green-soft); color: var(--green-dark); border-radius: 999px; padding: 1px 9px; font-size: 11px; font-weight: 600; }
 .data-mark { color: var(--orange); font-size: 12px; }

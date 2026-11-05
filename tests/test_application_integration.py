@@ -17,10 +17,12 @@ from urllib.parse import urlsplit
 import pandas as pd
 
 import functions
+from application import config as app_config
 from application.api import app
+from application import backups as app_backups
 from application.defaults import service as defaults_service
 from application.rates import service as rates_service
-from application.state import service as state_service
+from application.state import v2 as state_v2
 from core.rates import cache as rates_cache
 from core.rates import provider
 from core.standards import builtin_standards_snapshot
@@ -37,7 +39,7 @@ STANDARDS = {
 }
 
 
-async def _request_asgi(method, target, payload=None):
+async def _request_asgi(method, target, payload=None, extra_headers=None):
     """执行真实路由、请求模型、错误映射及 JSON 编码，无网络传输。"""
     parsed = urlsplit(target)
     request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else b""
@@ -58,13 +60,15 @@ async def _request_asgi(method, target, payload=None):
         if message["type"] == "http.response.body" and not message.get("more_body", False):
             response_finished.set()
 
+    headers = [(b"host", b"127.0.0.1"), (b"content-type", b"application/json")]
+    headers.extend(extra_headers or [])
     scope = {
         "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
         "http_version": "1.1", "method": method, "scheme": "http",
         "path": parsed.path, "raw_path": parsed.path.encode("ascii"),
         "query_string": parsed.query.encode("ascii"), "root_path": "",
-        "headers": [(b"host", b"test.local"), (b"content-type", b"application/json")],
-        "server": ("test.local", 80), "client": ("127.0.0.1", 12345),
+        "headers": headers,
+        "server": ("127.0.0.1", 80), "client": ("127.0.0.1", 12345),
     }
     await asyncio.wait_for(app(scope, receive, send), timeout=10)
     start = next(item for item in messages if item["type"] == "http.response.start")
@@ -81,14 +85,20 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.project = Path(temp)
         self.data = self.project / "data"
         self.data.mkdir()
-        self.state_path = self.data / "app-state.json"
+        self.global_path = self.data / "global.json"
+        self.months_dir = self.data / "months"
         self.defaults_path = self.data / "defaults.json"
         self.rates_dir = self.data / "rates"
+        self.backups_dir = self.project / "backups"
 
+        self.stack.enter_context(mock.patch.object(app_config, "DATA_DIR", self.data))
+        self.stack.enter_context(mock.patch.object(app_config, "BACKUP_DIR", self.backups_dir))
         self.stack.enter_context(mock.patch.object(defaults_service, "_DEFAULTS_FILE", self.defaults_path))
-        self.stack.enter_context(mock.patch.object(state_service, "APP_STATE_FILE", self.state_path))
+        self.stack.enter_context(mock.patch.object(state_v2, "APP_STATE_FILE", self.data / "app-state.json"))
+        self.stack.enter_context(mock.patch.object(state_v2, "GLOBAL_STATE_FILE", self.global_path))
+        self.stack.enter_context(mock.patch.object(state_v2, "MONTHS_DIR", self.months_dir))
+        self.stack.enter_context(mock.patch.object(state_v2, "LEGACY_DATA_DIR", self.data / "legacy"))
         self.stack.enter_context(mock.patch.object(rates_service, "RATES_DATA_DIR", self.rates_dir))
-        self.stack.enter_context(mock.patch.object(state_service, "_state_write_sequences", {}))
         for name in ("_RATES_CACHE", "_RATES_CACHE_KEY_LOCKS", "_RATES_CACHE_REFRESHING"):
             self.stack.enter_context(mock.patch.object(rates_cache, name, {}))
 
@@ -133,33 +143,87 @@ class ApplicationIntegrationTests(unittest.TestCase):
             index=pd.to_datetime(["2024-12-31", "2025-01-02", "2025-01-06", "2026-01-01"]),
         )
 
-    def request(self, method, path, payload=None, *, status=200):
-        actual_status, body = self.loop.run_until_complete(_request_asgi(method, path, payload))
+    def request(self, method, path, payload=None, *, status=200, extra_headers=None):
+        actual_status, body = self.loop.run_until_complete(
+            _request_asgi(method, path, payload, extra_headers),
+        )
         self.assertEqual(actual_status, status, body)
         return body
 
-    def test_monthly_route_reaches_defaults_rates_core_and_legacy_facade(self):
-        result = self.request("POST", "/api/calculate", {
-            "year": 2025, "month": 1, "region": "Mainland", "include_travel": True,
-            "itinerary": [
-                {"location": "Shenzhen", "ranges": [{"start": "2025-01-01", "end": "2025-01-03"}]},
-                {"location": "Shanghai", "ranges": [{"start": "2025-01-10", "end": "2025-01-12"}]},
-            ],
+    def test_non_local_browser_origin_is_rejected_before_write_route(self):
+        body = self.request(
+            "POST", "/api/months/2025-01/ensure", {}, status=403,
+            extra_headers=[(b"origin", b"https://attacker.example")],
+        )
+        self.assertEqual(body["error"]["code"], "ORIGIN_REJECTED")
+        self.assertFalse(self.months_dir.exists())
+
+    def test_backup_catalog_and_restore_route_replace_the_complete_v2_store(self):
+        march = self.request("POST", "/api/months/2025-01/ensure", {})["month"]
+        self.request("PUT", "/api/global/selection", {"month": "2025-01"})
+        snapshot = app_backups.create_data_backup(
+            reason="integration-restore-source",
+            state_lock=state_v2.legacy._state_disk_lock,
+            defaults_lock=defaults_service._DEFAULTS_LOCK,
+        )
+        changed = copy.deepcopy(march)
+        changed["options"]["region"] = "Overseas"
+        self.request("PUT", "/api/months/2025-01", {
+            "base_revision": march["revision"], "data": changed,
         })
+        self.request("POST", "/api/months/2025-02/ensure", {})
+        catalog = self.request("GET", "/api/backups")
+        self.assertTrue(any(row["id"] == snapshot.name and row["restorable"] for row in catalog["backups"]))
+
+        restored = self.request("POST", "/api/backups/restore", {
+            "backup_id": snapshot.name,
+            "base_token": catalog["currentToken"],
+            "user_confirmed": True,
+        })
+
+        self.assertTrue(restored["restored"])
+        self.assertEqual(set(self.request("GET", "/api/months")["months"]), {"2025-01"})
+        self.assertEqual(self.request("GET", "/api/months/2025-01")["options"]["region"], "Mainland")
+
+    def test_monthly_route_reaches_defaults_rates_core_and_legacy_facade(self):
+        ensured = self.request("POST", "/api/months/2025-01/ensure", {})["month"]
+        month_data = {key: copy.deepcopy(ensured[key]) for key in (
+            "itinerary", "options", "standards", "subscriptions", "result",
+        )}
+        month_data["itinerary"] = {
+            "Shenzhen": [{"start": "2025-01-01", "end": "2025-01-03"}],
+            "Shanghai": [{"start": "2025-01-10", "end": "2025-01-12"}],
+        }
+        month_data["options"].update({"region": "Mainland", "includeTravel": True})
+        month_data["subscriptions"]["items"] = [{
+            "id": "test-usd", "name": "测试订阅", "currency": "USD",
+            "cycle": "monthly", "amount": 15.0, "included": True,
+            "includeByDefault": True,
+            "appliesTo": {"Mainland": True, "Overseas": True},
+        }]
+        stored = self.request("PUT", "/api/months/2025-01", {
+            "base_revision": ensured["revision"], "data": month_data,
+        })
+        response = self.request("POST", "/api/months/2025-01/calculate", {
+            "base_revision": stored["revision"],
+        })
+        result = response["result"]
         monthly_average = (4.0 * 5 + 9.0 * 26) / 31
         self.assertEqual(result["summary"]["可变费用合计(人民币)"], 360.0)
-        self.assertEqual(result["summary"]["总预算(人民币)"], round(440.0 + 15 * monthly_average, 2))
-        self.assertEqual(result["extra_details"][0]["rmb_cost"], round(5 * monthly_average, 2))
+        self.assertEqual(result["summary"]["总预算(人民币)"], round(390.0 + 15 * monthly_average, 2))
+        self.assertEqual(result["extra_details"], [])
         self.assertNotIn("rates", result, "月度计算响应不再携带已删除图表模块的原始序列")
         self.assertEqual(result["rate_source"], {
             "kind": "current_month",
             "requested_month": "2025-01",
             "fallback": False,
         })
-        cny_fixed = next(row for row in result["fixed_details"] if row["currency"] == "CNY")
-        self.assertEqual(cny_fixed["avg_rate"], 1.0)
+        usd_fixed = next(row for row in result["fixed_details"] if row["currency"] == "USD")
+        self.assertEqual(usd_fixed["avg_rate"], round(monthly_average, 4))
         self.assertEqual(result["warnings"], [])
         self.assertEqual(result["deduped_entries"], 0)
+        self.assertEqual(result["inputRevision"], stored["revision"])
+        self.assertFalse(result["stale"])
         self.download.assert_called_once()
         self.assertEqual(self.download.call_args.args[0], "USDCNY=X")
 
@@ -182,15 +246,18 @@ class ApplicationIntegrationTests(unittest.TestCase):
         }
         explicit = functions.calculate_travel_budget(itinerary, "Mainland", 2025, 1, rates_dict=rates)
         automatic = functions.calculate_travel_budget(itinerary, "Mainland", 2025, 1)
-        for field in ("summary", "daily_details", "fixed_details", "extra_details"):
-            self.assertEqual(explicit[field], result[field])
-            self.assertEqual(automatic[field], result[field])
+        self.assertEqual(explicit["daily_details"], result["daily_details"])
+        self.assertEqual(automatic["daily_details"], result["daily_details"])
         for label, rows in (("iterator", iter(itinerary)), ("dataframe", pd.DataFrame(itinerary))):
             with self.subTest(itinerary=label):
                 compatible = functions.calculate_travel_budget(rows, "Mainland", 2025, 1)
-                for field in ("summary", "daily_details", "fixed_details", "extra_details"):
-                    self.assertEqual(compatible[field], result[field])
+                self.assertEqual(compatible["daily_details"], result["daily_details"])
         self.assertEqual(self.download.call_count, 1)  # facade 下载编排复用本次测试的内存缓存。
+
+    def test_missing_month_is_a_404_and_read_does_not_create_it(self):
+        body = self.request("GET", "/api/months/2025-02", status=404)
+        self.assertEqual(body["error"]["code"], "NOT_FOUND")
+        self.assertFalse((self.months_dir / "2025-02.json").exists())
 
     def test_annual_routes_use_only_actual_close_and_never_monthly_disk_cache(self):
         annual_rates = self.request("GET", "/api/annual-rates?year=2025&currencies=USD,CNY")
@@ -247,10 +314,19 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertEqual(initial["currencies"][:3], ["CNY", "HKD", "USD"])
         mainland = next(region for region in initial["regions"] if region["key"] == "Mainland")
         self.assertEqual(list(mainland["currencies"]), ["CNY", "USD"])
+        month = self.request("POST", "/api/months/2025-01/ensure", {
+            "defaults_revision": initial["defaults_revision"],
+        })["month"]
+        month_path = self.months_dir / "2025-01.json"
+        month_bytes = month_path.read_bytes()
+        month_mtime = month_path.stat().st_mtime_ns
         payload = copy.deepcopy(STANDARDS)
         payload["location_names"]["Shenzhen"] = "更新后的定居地"
         payload["base_revision"] = initial["defaults_revision"]
         saved = self.request("POST", "/api/defaults", payload)
+        self.assertEqual(month_path.read_bytes(), month_bytes)
+        self.assertEqual(month_path.stat().st_mtime_ns, month_mtime)
+        self.assertEqual(month["createdFrom"]["defaultsRevision"], initial["defaults_revision"])
         self.assertTrue(saved["defaults_customized"])
         self.assertNotEqual(saved["defaults_revision"], initial["defaults_revision"])
         self.assertEqual(self.request("GET", "/api/meta"), saved)
@@ -267,27 +343,34 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertEqual(reset["default_standards"], builtin_standards_snapshot())
         self.assertFalse(self.defaults_path.exists())
 
-    def test_state_http_roundtrip_and_corrupt_file_is_never_overwritten(self):
-        empty = self.request("GET", "/api/state")
-        self.assertEqual(empty["annualBudgetsByYear"], {})
-        self.assertFalse(self.state_path.exists())
-        saved = self.request("PUT", "/api/state", {
-            "year": 2025, "month": 1,
-            "annualBudgetsByYear": {"2025": {"USD": 100.0}},
-            "itineraryByMonth": {"2025-01": {"Shenzhen": [{"start": "2025-01-01", "end": "2025-01-03"}]}},
+    def test_v2_state_http_roundtrip_and_corrupt_file_is_never_overwritten(self):
+        empty = self.request("GET", "/api/global")
+        self.assertEqual(empty["revision"], 0)
+        self.assertEqual(self.request("GET", "/api/months")["months"], {})
+        self.assertFalse(self.global_path.exists())
+        saved = self.request("PUT", "/api/global", {
+            "base_revision": 0,
+            "data": {
+                "annualBudgetsByYear": {"2025": {"USD": 100.0}},
+                "annualResultsByYear": {},
+                "assetPortfoliosById": {},
+            },
         })
         self.assertEqual(saved["annualBudgetsByYear"], {"2025": {"USD": 100.0}})
-        self.assertEqual(self.request("GET", "/api/state"), saved)
-        self.assertEqual(json.loads(self.state_path.read_text(encoding="utf-8")), saved)
+        self.assertEqual(self.request("GET", "/api/global"), saved)
+        self.assertEqual(json.loads(self.global_path.read_text(encoding="utf-8")), saved)
 
         broken = b"{not-json"
-        self.state_path.write_bytes(broken)
-        for method, payload in (("GET", None), ("PUT", {"year": 2025, "month": 1})):
+        self.global_path.write_bytes(broken)
+        for method, payload in (
+            ("GET", None),
+            ("PUT", {"base_revision": saved["revision"], "data": {}}),
+        ):
             with self.subTest(method=method):
-                failure = self.request(method, "/api/state", payload, status=400)
+                failure = self.request(method, "/api/global", payload, status=400)
                 self.assertEqual(failure["error"]["code"], "BAD_REQUEST")
                 self.assertIn("JSON 文件无法读取或已损坏", failure["error"]["message"])
-                self.assertEqual(self.state_path.read_bytes(), broken)
+                self.assertEqual(self.global_path.read_bytes(), broken)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,14 @@ class StateConflictError(Exception):
     """另一个标签页已修改同一状态键；拒绝用旧基线覆盖。"""
 
 
+class StateSaveError(Exception):
+    """标签页关闭前的最终状态没有可靠保存，服务必须保持运行。"""
+
+
+class ResourceNotFoundError(Exception):
+    """请求的独立用户实体不存在，映射为 404。"""
+
+
 
 SUBSCRIPTION_REGIONS = ("Mainland", "Overseas")
 
@@ -80,19 +88,21 @@ def _parse_ymd(text: str, location: str) -> dt.date:
 
 
 def _annual_bounds(year: int) -> tuple[str, str]:
-    """全年汇率区间：当年截至今日，历史年截至 12 月 31 日。"""
+    """全年汇率区间：当年截至上一自然日，避免把盘中价冒充 Close。"""
     today = dt.date.today()
     if not (2000 <= year <= today.year):
         if year > today.year:
             raise ValueError(f"{year}年是未来年份，尚无可用的收盘汇率")
         raise ValueError(f"年份超出支持范围：{year}（支持 2000-{today.year}）")
-    end = today if year == today.year else dt.date(year, 12, 31)
+    end = today - dt.timedelta(days=1) if year == today.year else dt.date(year, 12, 31)
+    if end.year < year:
+        raise ValueError(f"{year}年尚无已完成自然日，暂不能计算实际收盘均值")
     return dt.date(year, 1, 1).isoformat(), end.isoformat()
 
 
 def _trailing_year_bounds(today: dt.date | None = None) -> tuple[str, str]:
-    """最近 365 个自然日（含截至日）的首尾日期。"""
-    end = today or dt.date.today()
+    """最近 365 个已完成自然日；传入值表示当前日期，同样排除当日。"""
+    end = (today or dt.date.today()) - dt.timedelta(days=1)
     start = end - dt.timedelta(days=364)
     return start.isoformat(), end.isoformat()
 
@@ -151,38 +161,54 @@ class DataUploadRequest(BaseModel):
 
 
 
-class AppStateIn(BaseModel):
-    version: int | None = 1
-    updatedAt: str | None = None
-    year: int | None = None
-    month: int | None = None
-    itineraryByMonth: dict = Field(default_factory=dict)
-    optionsByMonth: dict = Field(default_factory=dict)
-    overridesByMonth: dict = Field(default_factory=dict)
-    resultsByMonth: dict = Field(default_factory=dict)
-    subscriptionsByMonth: dict = Field(default_factory=dict)
-    annualBudgetsByYear: dict = Field(default_factory=dict)
-    annualResultsByYear: dict = Field(default_factory=dict)
-    assetPortfoliosById: dict = Field(default_factory=dict)
-    baseValues: dict | None = Field(
-        default=None,
-        description="本次实际修改键的读取基线，用于阻止旧标签页覆盖并发更新",
+class BackupRestoreIn(BaseModel):
+    backup_id: str = Field(min_length=1, max_length=200)
+    base_token: str = Field(min_length=64, max_length=64)
+    user_confirmed: Literal[True] = Field(
+        description="用户已在本次操作中明确确认用所选备份替换当前权威状态",
     )
-    tabId: str | None = Field(
-        default=None, min_length=1, max_length=64,
-        description="发起状态写入的浏览器标签页标识；与 sequence 成对提交",
-    )
-    sequence: int | None = Field(
-        default=None, ge=1,
-        description="同一标签页内单调递增的状态写入序号；与 tabId 成对提交",
-    )
-    replace: bool = Field(default=False, description="为 true 时整份覆盖（数据管理「清空全部」）")
 
 
 
 class TabRegisterIn(BaseModel):
     tab_id: str = Field(min_length=1, max_length=64, description="浏览器页面唯一标识")
-    state: dict | None = Field(default=None, description="关闭页面前附带的完整行程状态，先落盘再退出")
+    state: dict | None = Field(default=None, description="关闭页面前附带的 v2 脏实体包，先落盘再退出")
+    state_omitted: bool = Field(
+        default=False,
+        description="最终状态超过浏览器 keepalive 限额；服务端不得自动退出",
+    )
+
+
+class MonthStateWriteIn(BaseModel):
+    base_revision: int = Field(ge=0)
+    data: dict = Field(default_factory=dict)
+
+
+class MonthEnsureIn(BaseModel):
+    defaults_revision: str | None = Field(default=None, min_length=64, max_length=64)
+
+
+class MonthDeleteIn(BaseModel):
+    base_revision: int = Field(ge=1)
+
+
+class GlobalStateWriteIn(BaseModel):
+    base_revision: int = Field(ge=0)
+    data: dict = Field(default_factory=dict)
+
+
+class MonthSelectionIn(BaseModel):
+    month: str | None = None
+
+
+class StoredMonthCalculateIn(BaseModel):
+    base_revision: int = Field(ge=1)
+
+
+class StateClearIn(BaseModel):
+    user_confirmed: bool = False
+    global_revision: int = Field(ge=0)
+    month_revisions: dict[str, int] = Field(default_factory=dict)
 
 
 

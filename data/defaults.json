@@ -147,6 +147,18 @@
         "Mainland": false,
         "Overseas": true
       }
+    },
+    {
+      "id": "sub-d54aa703-48c9-4b02-a46a-500c504392b1",
+      "name": "Nomad 流量包",
+      "currency": "USD",
+      "cycle": "monthly",
+      "amount": 22.0,
+      "includeByDefault": true,
+      "appliesTo": {
+        "Mainland": true,
+        "Overseas": false
+      }
     }
   ]
 }

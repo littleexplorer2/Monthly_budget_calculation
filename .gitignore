@@ -6,4 +6,9 @@ __pycache__/
 *.tmp
 .scratch/
 data/rates/*.json
+data/legacy/
+data/.v2-migration-*/
+data/.cleared-*/
+data/.restore-*/
+data/.restore-old-*/
 /backups/

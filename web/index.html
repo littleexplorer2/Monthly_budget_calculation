@@ -6,7 +6,7 @@
   <title>每月预算</title>
   <style>[hidden]{display:none!important}</style>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/style.css?v=20261105-spendee-light">
+  <link rel="stylesheet" href="css/style.css?v=20261105-spendee-light-2">
 </head>
 <body>
   <noscript>
@@ -453,9 +453,9 @@
         <h3>数据管理</h3>
         <button type="button" id="btn-data-close" class="period-btn" title="关闭">✕</button>
       </div>
-      <p class="lede">行程、订阅、资产、预算标准与计算结果只保存在本机项目 data/ 目录。程序不会自动上传任何用户数据；只有你点击下方按钮并再次确认后，才会同步应用状态与用户默认标准。</p>
+      <p class="lede">行程、订阅、资产、预算标准与计算结果只保存在本机项目 data/ 目录。这里会列出不可变备份：v2 快照经再次确认后可整库恢复，旧 v1 快照仅供使用对应旧版本人工回滚。程序不会自动上传任何用户数据。</p>
       <div id="data-modal-list" class="data-list"></div>
-      <p id="data-upload-status" class="data-upload-status">显式确认的上传包含 data/app-state.json（含订阅与资产）及 data/defaults.json，不包含 data/rates/；需要预先配置远程仓库和 Git 登录。</p>
+      <p id="data-upload-status" class="data-upload-status">显式确认的上传包含 data/global.json、data/months/*.json 与 data/defaults.json；不包含 data/rates/ 或本机迁移归档，需要预先配置远程仓库和 Git 登录。</p>
       <div class="modal-foot">
         <button type="button" id="btn-data-clear-all" class="ghost-btn danger">清空全部</button>
         <button type="button" id="btn-data-upload" class="ghost-btn primary">保存并上传预算数据</button>
