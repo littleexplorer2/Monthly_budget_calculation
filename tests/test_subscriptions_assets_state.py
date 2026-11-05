@@ -70,7 +70,13 @@ class SubscriptionAssetStateTests(unittest.TestCase):
             "assetPortfoliosById": {"current": portfolio()},
         })
         self.assertTrue(state["subscriptionsByMonth"]["2026-09"]["items"][0]["included"])
+        self.assertEqual(
+            state["subscriptionsByMonth"]["2026-09"]["items"][0]["appliesTo"],
+            {"Mainland": True, "Overseas": True},
+            "旧订阅缺少地点字段时必须兼容为内地、海外均适用",
+        )
         self.assertFalse(state["subscriptionsByMonth"]["2026-10"]["items"][0]["included"])
+        self.assertEqual(state["subscriptionsByMonth"]["2026-10"]["retiredIds"], [])
         self.assertEqual(
             state["subscriptionsByMonth"]["2026-10"]["items"][0]["amount"],
             1200.0,
@@ -186,11 +192,42 @@ class SubscriptionAssetStateTests(unittest.TestCase):
             ({"subscriptionsByMonth": {"2026-09": {"items": [
                 subscription("bad", included=1)
             ]}}}, "included 必须是布尔值"),
+            ({"subscriptionsByMonth": {"2026-09": {"items": [
+                subscription("bad", appliesTo={"Mainland": True})
+            ]}}}, "appliesTo 必须同时包含 Mainland 和 Overseas"),
+            ({"subscriptionsByMonth": {"2026-09": {"items": [
+                subscription("bad", appliesTo={"Mainland": False, "Overseas": False})
+            ]}}}, "appliesTo 至少选择一个预算区域"),
+            ({"subscriptionsByMonth": {"2026-09": {
+                "items": [], "retiredIds": "bad",
+            }}}, "retiredIds 必须是数组"),
+            ({"subscriptionsByMonth": {"2026-09": {
+                "items": [], "retiredIds": ["same", "same"],
+            }}}, r"retiredIds\[1\] 重复"),
+            ({"subscriptionsByMonth": {"2026-09": {
+                "items": [subscription("same")], "retiredIds": ["same"],
+            }}}, "retiredIds 不能包含仍在 items 中的项目"),
         ]
         for payload, message in invalid:
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(ValueError, message):
                     state_service._normalize_app_state(payload)
+
+    def test_retired_subscription_ids_are_preserved_as_forward_only_tombstones(self):
+        state = state_service._normalize_app_state({
+            "subscriptionsByMonth": {
+                "2026-09": {"items": [subscription("active")]},
+                "2026-10": {"items": [], "retiredIds": ["cancelled"]},
+            },
+        })
+        self.assertEqual(
+            state["subscriptionsByMonth"]["2026-09"]["retiredIds"], [],
+            "旧快照缺少字段时应兼容为空墓碑列表",
+        )
+        self.assertEqual(
+            state["subscriptionsByMonth"]["2026-10"],
+            {"items": [], "retiredIds": ["cancelled"]},
+        )
 
     def test_asset_validation_rejects_fake_or_ambiguous_totals(self):
         invalid = []

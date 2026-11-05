@@ -189,7 +189,7 @@ def _fetch_rates_parallel(currencies: list[str], start: str, end: str,
 
     refresh=False：进程内缓存 → 磁盘缓存 → 仅下载缺失币种并回写磁盘。
     refresh=True：跳过内存与磁盘缓存，向 Yahoo Finance 重新下载并覆盖两级缓存。
-    任一币种失败即整体失败并给出清晰错误（避免图表缺线导致误解）。
+    任一预算币种失败即整体失败并给出清晰错误，避免生成缺少汇率的不完整预算。
     """
     if not currencies:
         return {}
@@ -320,38 +320,6 @@ def _fetch_budget_rates(currencies: list[str], year: int, month: int,
 
 
 
-def _series_stats(series: pd.Series) -> dict:
-    """汇率序列统计（起始/期末/均值/最低/最高），空序列各字段为 None。"""
-    vals = series.dropna()
-    if vals.empty:
-        return {"start": None, "end": None, "avg": None, "min": None, "max": None}
-    return {
-        "start": round(float(vals.iloc[0]), 6),
-        "end": round(float(vals.iloc[-1]), 6),
-        "avg": round(float(vals.mean()), 6),
-        "min": round(float(vals.min()), 6),
-        "max": round(float(vals.max()), 6),
-    }
-
-
-
-def _rates_payload(rates: dict[str, pd.Series], order: list[str]) -> dict:
-    """构造前端图表所需的序列数据（含 NaN→null 清洗，保证 JSON 合法）。"""
-    dates: list[str] = []
-    series_json: dict[str, list] = {}
-    stats: dict[str, dict] = {}
-    for curr in order:
-        s = rates[curr]
-        if not dates:
-            dates = [d.strftime("%Y-%m-%d") for d in s.index]
-        series_json[curr] = [
-            None if pd.isna(v) else round(float(v), 6) for v in s.tolist()
-        ]
-        stats[curr] = _series_stats(s)
-    return {"dates": dates, "series": series_json, "stats": stats}
-
-
-
 def _fetch_annual_close_rates(currencies: list[str], start: str, end: str,
                               max_workers: int = 4, refresh: bool = False,
                               ) -> tuple[dict[str, pd.Series], dict[str, str]]:
@@ -433,15 +401,19 @@ def _asset_rates_payload(start: str, end: str, rates: dict[str, pd.Series],
 
 
 
-NETWORK_CHECK_TIMEOUT = 8.0
+# yfinance 的主下载与 Ticker.history 备援各自最多可能等待约 10 秒，
+# 两次尝试之间还有 1 秒退避。外层墙钟上限必须覆盖完整备援链，否则会在
+# 底层仍有机会成功时先返回失败，把正常但冷启动较慢的连接误报成不可达。
+NETWORK_CHECK_TIMEOUT = 24.0
 
 
 
 def api_network_check():
     """快速检测能否从 Yahoo Finance 下载汇率数据（供页面打开时提示网络状态）。
 
-    用最近 6 个自然日窗口探测单个稳定币种 HKD，超时或失败返回 ok=False；
-    服务本身可达（能收到该响应）而数据源不可达时，前端据此提示「网络异常，请打开VPN」。
+    用最近 6 个自然日窗口探测单个稳定币种 HKD。该接口只能判断 Yahoo
+    数据源本次请求是否成功，不能把超时、限流或空响应直接诊断成用户网络或
+    VPN 故障，因此失败响应会保留具体原因并使用中性提示。
     """
     today = dt.date.today()
     start = (today - dt.timedelta(days=6)).isoformat()
@@ -453,9 +425,16 @@ def api_network_check():
         fut = pool.submit(rates_core.get_historical_rates, ["HKD"], start, end)
         try:
             rates = fut.result(timeout=NETWORK_CHECK_TIMEOUT)
-        except FutureTimeoutError as exc:
+        except FutureTimeoutError:
             fut.cancel()
-            raise app_contracts.RateFetchError(f"连接 Yahoo Finance 超过 {NETWORK_CHECK_TIMEOUT:g} 秒") from exc
+            message = f"Yahoo Finance 响应超过 {NETWORK_CHECK_TIMEOUT:g} 秒"
+            logger.warning("Yahoo Finance 连通性检测超时：%s", message)
+            return JSONResponse(status_code=200, content={
+                "ok": False,
+                "reason": "timeout",
+                "error": message,
+                "hint": "Yahoo Finance 响应超时，本次连通性检测未完成；实际汇率请求仍会按正常流程重试。",
+            })
         series = rates["HKD"]
         if series is None or series.dropna().empty:
             raise app_contracts.RateFetchError("探测窗口内无汇率数据")
@@ -465,8 +444,9 @@ def api_network_check():
         logger.warning("Yahoo Finance 连通性检测失败：%s", exc)
         return JSONResponse(status_code=200, content={
             "ok": False,
+            "reason": "source_unavailable",
             "error": str(exc)[:300],
-            "hint": "网络异常，请打开VPN后重试（无法从 Yahoo Finance 获取汇率数据）",
+            "hint": "暂时无法从 Yahoo Finance 获取汇率数据；请稍后重试，若持续失败再检查网络或代理设置。",
         })
     finally:
         # wait=False 才能使上面的超时成为真正的请求墙钟上限。
@@ -509,18 +489,6 @@ def api_data_rates_delete(body: app_contracts.MonthListIn):
         start, end = app_contracts.month_bounds(year, month)
         rates_core.purge_rates_cache(start, end, rate_kind="monthly")
     return {"removed": removed, "months": _list_rate_months()}
-
-
-
-def api_rates(year: int, month: int,
-              currencies: str | None = None,
-              refresh: bool = False):
-    """当月每日汇率（兑人民币）与月度统计，供折线图与统计表使用。"""
-    app_contracts.validate_year_month(year, month)
-    curr_list = app_metadata.parse_currencies(currencies)
-    start, end = app_contracts.month_bounds(year, month)
-    rates = _fetch_rates_parallel(curr_list, start, end, refresh=refresh)
-    return _rates_payload(rates, curr_list)
 
 
 

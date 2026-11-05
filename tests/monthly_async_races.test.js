@@ -11,18 +11,8 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function ratePayload(value) {
-  return {
-    dates: ['2026-09-01'],
-    series: { USD: [value] },
-    stats: { USD: { start: value, end: value, avg: value, min: value, max: value } },
-  };
-}
-
-test('统计面板只展示预算计算响应，不单独请求月度汇率', async () => {
-  const { app, doc, requests } = createApp({
-    monthlyRates: () => { throw new Error('不应调用独立月度汇率接口'); },
-  });
+test('统计面板已删除月度汇率走势分区和独立月度汇率请求', async () => {
+  const { app, doc, requests } = createApp();
   await app.init();
 
   app.openSection('dashboard');
@@ -30,16 +20,16 @@ test('统计面板只展示预算计算响应，不单独请求月度汇率', as
   assert.equal(app.state.activeSection, 'dashboard');
   assert.equal(doc.querySelector('#tab-dashboard').classList.contains('active'), true);
   assert.equal(doc.querySelector('#tab-analysis').classList.contains('active'), true);
-  doc.querySelector('.dashboard-nav-item[data-dashboard-tab="rates"]').click();
-  assert.equal(app.state.activeDashboardTab, 'rates');
-  assert.equal(doc.querySelector('#tab-analysis').classList.contains('active'), false);
-  assert.equal(doc.querySelector('#tab-rates').classList.contains('active'), true);
-  assert.equal(doc.querySelector('#rates-empty').hasAttribute('hidden'), false);
+  assert.equal(doc.querySelector('.dashboard-nav-item[data-dashboard-tab="rates"]'), null);
+  assert.equal(doc.querySelector('#tab-rates'), null);
   assert.equal(requests.some((request) => request.url.includes('/api/rates?')), false);
-  assert.equal(doc.querySelector('#btn-refresh-rates'), null);
+  assert.deepEqual(
+    doc.querySelectorAll('.dashboard-nav-item').map((node) => node.dataset.dashboardTab),
+    ['analysis', 'assets'],
+  );
 });
 
-test('月度计算期间切月后，响应仍保存到发起月份且不污染当前月份结果或汇率', async () => {
+test('月度计算期间切月后，响应仍保存到发起月份且不污染当前月份结果', async () => {
   const calculation = deferred();
   const initialState = defaultStateFixture();
   initialState.itineraryByMonth = {
@@ -65,7 +55,6 @@ test('月度计算期间切月后，响应仍保存到发起月份且不污染�
     fixed_details: [],
     extra_details: [],
     warnings: [],
-    rates: ratePayload(7.19),
   });
   await pending;
 
@@ -76,7 +65,6 @@ test('月度计算期间切月后，响应仍保存到发起月份且不污染�
   assert.equal(app.state.resultsByMonth['2026-09'].summary['总预算(人民币)'], 321);
   assert.equal(app.state.resultsByMonth['2026-10'], undefined);
   assert.equal(app.state.calcResult, null, '当前十月不应展示九月返回的结果');
-  assert.notEqual(app.state.ratesMonth, '2026-10', '九月计算附带汇率不应标成十月数据');
   assert.equal(doc.querySelector('#tab-result').classList.contains('active'), false,
     '切到十月后，九月响应不应强制跳转到结果页');
 

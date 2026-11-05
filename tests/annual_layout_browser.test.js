@@ -227,7 +227,7 @@ async function waitForPage(evaluate, expression, message) {
   throw new Error(message);
 }
 
-test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平溢出', async (t) => {
+test('浅色主题保持 desktop / 390px 既有布局且各预算页不水平溢出', async (t) => {
   const mock = await startMockServer();
   let probe = null;
   let cdp = null;
@@ -256,19 +256,33 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
       const options = document.querySelector('.context-options');
       const subnav = document.querySelector('.section-nav');
       const actions = document.querySelector('.context-actions');
+      const sheet = document.querySelector('.sheet');
+      const primaryButton = document.querySelector('.cta');
+      const bodyStyle = getComputedStyle(document.body);
+      const headerStyle = getComputedStyle(header);
       const rect = (el) => { const r = el.getBoundingClientRect(); return { left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width, height:r.height }; };
       return {
-        bodyBackground: getComputedStyle(document.body).backgroundColor,
-        headerBackground: getComputedStyle(header).backgroundImage,
-        headerBackdrop: getComputedStyle(header).backdropFilter || getComputedStyle(header).webkitBackdropFilter,
-        headerPosition: getComputedStyle(header).position,
-        headerRadius: getComputedStyle(header).borderRadius,
+        bodyBackground: bodyStyle.backgroundColor,
+        bodyColor: bodyStyle.color,
+        headerBackground: headerStyle.backgroundColor,
+        headerBackdrop: headerStyle.backdropFilter || headerStyle.webkitBackdropFilter,
+        headerShadow: headerStyle.boxShadow,
+        headerPosition: headerStyle.position,
+        headerRadius: headerStyle.borderRadius,
+        sheetBackground: getComputedStyle(sheet).backgroundColor,
+        primaryButtonBackground: getComputedStyle(primaryButton).backgroundColor,
+        primaryButtonColor: getComputedStyle(primaryButton).color,
         header: rect(header), month: rect(month), context: rect(context), options: rect(options), subnav: rect(subnav), actions: rect(actions),
       };
     })()`);
-    assert.match(shell.bodyBackground, /rgb\((?:[0-9]|1[0-9]|2[0-9]),\s*(?:[0-9]|1[0-9]|2[0-9]),\s*(?:[0-9]|1[0-9]|2[0-9])\)/,
-      '页面必须使用深色背景');
-    assert.notEqual(shell.headerBackdrop, 'none', '全局栏应启用液态玻璃模糊');
+    assert.equal(shell.bodyBackground, 'rgb(244, 247, 250)', '页面应使用浅灰蓝背景');
+    assert.equal(shell.bodyColor, 'rgb(50, 76, 91)', '正文应使用蓝灰前景色');
+    assert.equal(shell.headerBackground, 'rgb(255, 255, 255)', '全局栏应使用白色表面');
+    assert.ok(shell.headerBackdrop === 'none' || shell.headerBackdrop === '', '浅色全局栏不应保留液态玻璃模糊');
+    assert.notEqual(shell.headerShadow, 'none', '全局栏应保留轻量层级阴影');
+    assert.equal(shell.sheetBackground, 'rgb(255, 255, 255)', '内容卡片应使用白色表面');
+    assert.equal(shell.primaryButtonBackground, 'rgb(0, 128, 95)', '主操作应使用可读的深绿色');
+    assert.equal(shell.primaryButtonColor, 'rgb(255, 255, 255)', '主操作应使用白色文字');
     assert.equal(shell.headerPosition, 'sticky', '全局栏应固定在视口顶部');
     assert.match(shell.headerRadius, /1[8-9]px|2[0-9]px/);
     assert.ok(shell.header.left > 0 && shell.header.right < 1280, '全局栏应悬浮并与视口两侧留空');
@@ -286,11 +300,16 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
       return {
         cards,
         ledeCount: document.querySelectorAll('#tab-subscriptions > .view-head .lede').length,
-        toggleText: document.querySelector('#subscription-list .subscription-toggle span').textContent,
-        toggleFits: (() => {
-          const node = document.querySelector('#subscription-list .subscription-toggle');
-          return node.scrollWidth <= node.clientWidth + 1;
-        })(),
+        toggleTexts: [...document.querySelectorAll('#subscription-list .subscription-toggle span')]
+          .slice(0, 2).map((node) => node.textContent),
+        togglesFit: [...document.querySelectorAll('#subscription-list .subscription-toggle')]
+          .every((node) => node.scrollWidth <= node.clientWidth + 1),
+        addButtons: document.querySelectorAll('#subscription-list [data-action="add-subscription"]').length,
+        globalAddButton: !!document.querySelector('#btn-add-subscription'),
+        currencySelectors: document.querySelectorAll('#subscription-list select[data-subscription-field="currency"]').length,
+        regionPickers: document.querySelectorAll('#subscription-list details.subscription-region-picker').length,
+        regionLabels: [...document.querySelectorAll('#subscription-list .subscription-region-menu span')]
+          .slice(0, 2).map((node) => node.textContent),
         optionColor: optionStyle && optionStyle.color,
         optionBackground: optionStyle && optionStyle.backgroundColor,
         horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -298,8 +317,13 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
     })()`);
     assert.equal(subscriptions.cards.length, 3);
     assert.equal(subscriptions.ledeCount, 0, '订阅管理标题下不应保留已指定删除的说明文字');
-    assert.equal(subscriptions.toggleText, '计入默认');
-    assert.equal(subscriptions.toggleFits, true, '计入默认勾选框文案必须完整显示');
+    assert.deepEqual(subscriptions.toggleTexts, ['计入默认', '计入当月预算']);
+    assert.equal(subscriptions.togglesFit, true, '两个订阅勾选框文案必须完整显示');
+    assert.equal(subscriptions.addButtons, 3);
+    assert.equal(subscriptions.globalAddButton, false);
+    assert.equal(subscriptions.currencySelectors, 0);
+    assert.equal(subscriptions.regionPickers, 3);
+    assert.deepEqual(subscriptions.regionLabels, ['对内地预算使用', '对海外预算使用']);
     assert.ok(subscriptions.cards.every((card) => Math.abs(card.top - subscriptions.cards[0].top) <= 2),
       `桌面端 CNY / HKD / USD 订阅应并排：${JSON.stringify(subscriptions.cards)}`);
     assert.ok(subscriptions.cards[0].right < subscriptions.cards[1].left
@@ -360,8 +384,8 @@ test('统计面板在 desktop 并排、在 390px 单列且各预算页不水平�
     })()`);
     assert.ok(Math.abs(dashboardNavigation.barCenter - dashboardNavigation.navCenter) <= 2,
       '统计面板子分区导航应位于上下文栏中间');
-    assert.deepEqual(dashboardNavigation.order, ['analysis', 'assets', 'rates'],
-      '资产管理应位于年度总览和汇率走势之间');
+    assert.deepEqual(dashboardNavigation.order, ['analysis', 'assets'],
+      '数据面板只保留年度总览与资产管理');
 
     const desktop = await cdp.evaluate(`(() => {
       const annual = document.querySelector('.annual-budget-card').getBoundingClientRect();

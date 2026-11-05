@@ -63,15 +63,6 @@ test('启动时自动更新年度与有行程的月度预算，且不要求确�
         '总预算(人民币)': 300,
       },
       daily_details: [], fixed_details: [], extra_details: [], warnings: [],
-      rates: {
-        dates: [`${year}-${month}-01`],
-        series: { CNY: [1], CNH: [0.998], HKD: [0.92], USD: [7.1] },
-        stats: {
-          CNY: { start: 1, end: 1, avg: 1, min: 1, max: 1 },
-          CNH: { start: 0.998, end: 0.998, avg: 0.998, min: 0.998, max: 0.998 },
-        },
-      },
-      rate_source: { kind: 'current_month', requested_month: `${year}-${month}`, fallback: false },
     },
   });
 
@@ -87,13 +78,10 @@ test('启动时自动更新年度与有行程的月度预算，且不要求确�
   assert.equal(doc.querySelector('#chk-standards-confirmed'), null, '界面不再提供确认标准门禁');
   assert.equal(app.state.activeSection, 'budget');
   assert.equal(app.state.activeBudgetTab, 'standards', '自动更新不能强制跳到结果页');
-  assert.ok(app.state.ratesData.series.CNH, '月度计算响应应保留 CNH/CNY 展示序列');
-
   app.openSection('dashboard');
-  doc.querySelector('.dashboard-nav-item[data-dashboard-tab="rates"]').click();
-  const rateTitles = doc.querySelectorAll('.rate-chart-title');
-  assert.ok(rateTitles.length >= 1);
-  assert.match(rateTitles[0].textContent, /CNH\/CNY/, '汇率分区第一张图应默认显示离岸兑在岸人民币');
+  assert.equal(doc.querySelector('.dashboard-nav-item[data-dashboard-tab="rates"]'), null);
+  assert.equal(doc.querySelector('#tab-rates'), null);
+  assert.equal(Object.prototype.hasOwnProperty.call(app.state, 'ratesData'), false);
 });
 
 test('各月比较不再渲染独立表格，完整月份数据只在折线图提示框显示', async () => {

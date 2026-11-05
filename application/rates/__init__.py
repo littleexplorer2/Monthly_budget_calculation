@@ -11,8 +11,6 @@ from .service import (
     _series_from_disk as series_from_disk,
     _fetch_rates_parallel as fetch_rates_parallel,
     _fetch_budget_rates as fetch_budget_rates,
-    _series_stats as series_stats,
-    _rates_payload as rates_payload,
     _fetch_annual_close_rates as fetch_annual_close_rates,
     _annual_observed_through as annual_observed_through,
     _annual_rates_payload as annual_rates_payload,
@@ -21,7 +19,6 @@ from .service import (
     api_network_check as network_check,
     api_data_rates_list as data_rates_list,
     api_data_rates_delete as data_rates_delete,
-    api_rates as rates,
     api_annual_rates as annual_rates,
     api_asset_rates as asset_rates,
 )

@@ -36,20 +36,6 @@ def _download_ticker_rates(ticker, start_date, end_date, normalizer):
     raise ValueError(f"无法下载汇率数据集：{ticker}") from last_error
 
 
-def _download_cnh_cny_rate(start_date, end_date, normalizer):
-    """由 Yahoo 的 USD/CNY 与 USD/CNH 同日行情推导 1 CNH 可兑换的 CNY。"""
-    onshore = _download_ticker_rates("CNY=X", start_date, end_date, normalizer)
-    offshore = _download_ticker_rates("CNH=X", start_date, end_date, normalizer)
-    onshore, offshore = onshore.align(offshore, join="inner")
-    derived = (pd.to_numeric(onshore, errors="coerce")
-               / pd.to_numeric(offshore, errors="coerce"))
-    derived = derived.replace([float("inf"), float("-inf")], pd.NA).dropna()
-    derived = derived[derived > 0]
-    if derived.empty:
-        raise ValueError("USD/CNY 与 USD/CNH 没有可用于推导 CNH/CNY 的同日行情")
-    derived.name = getattr(onshore, "name", None) or "rate"
-    return derived
-
 def _download_currency_rates(currency, start_date, end_date, normalizer, *, cny_calendar=True):
     """下载单个币种并交给指定规范化器；月度/年度共用同一备援链。"""
     if currency == "CNY":
@@ -59,9 +45,6 @@ def _download_currency_rates(currency, start_date, end_date, normalizer, *, cny_
             pd.Timestamp(end_date).normalize(),
         ])
         return pd.Series(1.0, index=index, name="rate")
-
-    if currency == "CNH":
-        return _download_cnh_cny_rate(start_date, end_date, normalizer)
 
     ticker = f"{currency}CNY=X"
     return _download_ticker_rates(ticker, start_date, end_date, normalizer)

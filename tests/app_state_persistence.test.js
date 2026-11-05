@@ -147,8 +147,8 @@ test('upload saves the latest state before requesting the remote push', async ()
   const app = loadAppForTest();
   const calls = [];
   app.seed('2026-02');
-  app.setApi(async (url) => {
-    calls.push(url);
+  app.setApi(async (url, options = {}) => {
+    calls.push({ url, options });
     if (url === '/api/data/upload') {
       return { remote: 'origin', branch: 'main', commit: 'abc1234', message: '数据已提交并上传' };
     }
@@ -156,7 +156,11 @@ test('upload saves the latest state before requesting the remote push', async ()
   });
 
   await app.uploadAll();
-  assert.deepEqual(calls, ['/api/state', '/api/data/upload']);
+  assert.deepEqual(calls.map((call) => call.url), ['/api/state', '/api/data/upload']);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(calls[1].options.body)),
+    { user_confirmed: true },
+  );
 });
 
 test('closing the page sends one complete state snapshot with unregister', async () => {

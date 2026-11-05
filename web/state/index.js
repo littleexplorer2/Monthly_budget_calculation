@@ -20,7 +20,7 @@
         optionsByMonth: {},       // { 'YYYY-MM': { region, includeTravel, travelSelected } }
         overridesByMonth: {},     // { 'YYYY-MM': 完整标准快照；兼容读取旧版差异 }
         resultsByMonth: {},       // { 'YYYY-MM': 计算结果（不含汇率明细） }
-        subscriptionsByMonth: {}, // { 'YYYY-MM': {items: 订阅项目逐月快照} }
+        subscriptionsByMonth: {}, // { 'YYYY-MM': {items: 逐月快照, retiredIds: 永久取消项目 ID} }
         annualBudgetsByYear: {},  // { 'YYYY': { currency: 全年当地金额 } }
         annualResultsByYear: {},  // { 'YYYY': 紧凑全年计算结果（不含原始汇率序列） }
         assetPortfoliosById: {},  // { current: {calculationBase:{CNY,HKD,USD}, rates, items} }
@@ -33,11 +33,7 @@
         persistFailureNotified: false,
         activeLocation: null,     // 当前日历操作的目标地点
         calSel: { start: null, end: null },
-        ratesData: null,          // 最近一次汇率数据
-        ratesMonth: null,         // 汇率数据对应的月份 key
-        ratesSource: null,        // 本次计算的行情来源（当月或月初上月均值回退）
         calcResult: null,
-        rateCharts: [],           // 每币种独立折线图实例 { currency, instance }
         analysisChart: null,      // 数据分析页折线图
         busy: false,
         // 新建预算标准：当月自定义地点（[{key,name,category,currency}]）与固定预算自定义币种名

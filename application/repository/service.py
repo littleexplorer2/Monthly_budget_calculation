@@ -95,11 +95,14 @@ def _repository_context(base_dir: Path) -> tuple[Path, str, str, str]:
 
 
 
-def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR) -> dict:
-    """提交预算/行程状态与用户默认标准，再推送当前分支。
+def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR,
+                           *, user_confirmed: bool = False) -> dict:
+    """经本次用户确认后提交预算/行程状态与用户默认标准，再推送当前分支。
 
     ``data/rates`` 是可从 Yahoo Finance 重建的本机缓存，既不暂存也不提交。
     """
+    if user_confirmed is not True:
+        raise app_contracts.RepositoryUploadError("上传用户数据前必须取得用户明确确认")
     with _repository_upload_lock:
         root, remote, branch, data_relative = _repository_context(base_dir)
         if not (base_dir / "data").is_dir():
@@ -142,6 +145,8 @@ def _upload_data_to_remote(base_dir: Path = app_config.BASE_DIR) -> dict:
 
 
 
-def api_data_upload():
-    """将预算/行程状态和用户默认标准提交并推送到 Git 远程仓库。"""
-    return _upload_data_to_remote()
+def api_data_upload(body: app_contracts.DataUploadRequest):
+    """仅在用户明确确认本次操作后上传权威用户数据。"""
+    if getattr(body, "user_confirmed", False) is not True:
+        raise app_contracts.RepositoryUploadError("上传用户数据前必须取得用户明确确认")
+    return _upload_data_to_remote(user_confirmed=True)

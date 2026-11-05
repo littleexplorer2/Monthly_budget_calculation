@@ -105,7 +105,11 @@
           if (!saved) throw new Error('本地数据保存失败，请确认后端服务正常');
 
           if (status) status.textContent = '本地数据已保存，正在提交并推送…';
-          const result = await apiModule.api('/api/data/upload', { method: 'POST', timeout: 180000 });
+          const result = await apiModule.api('/api/data/upload', {
+            method: 'POST',
+            body: { user_confirmed: true },
+            timeout: 180000,
+          });
           const target = `${result.remote}/${result.branch}`;
           const message = `${result.message}（${target}，${result.commit}）`;
           if (status) status.textContent = message;

@@ -9,6 +9,7 @@ import math
 import re
 import threading
 
+from application import contracts as app_contracts
 from application.config import DATA_DIR
 from core.standards import builtin_standards_snapshot, normalize_defaults_payload
 from core.standards import resolve_standards as _resolve_standards
@@ -150,6 +151,9 @@ def _normalize_subscription_defaults(raw) -> list[dict]:
         include_by_default = item.get("includeByDefault", True)
         if not isinstance(include_by_default, bool):
             raise ValueError(f"{path}.includeByDefault 必须是布尔值")
+        applies_to = app_contracts.normalize_subscription_applies_to(
+            item.get("appliesTo"), f"{path}.appliesTo",
+        )
         normalized.append({
             "id": item_id,
             "name": name,
@@ -157,6 +161,7 @@ def _normalize_subscription_defaults(raw) -> list[dict]:
             "cycle": cycle,
             "amount": float(amount),
             "includeByDefault": include_by_default,
+            "appliesTo": applies_to,
         })
     return normalized
 

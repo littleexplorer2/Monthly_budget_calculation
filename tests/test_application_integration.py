@@ -124,16 +124,6 @@ class ApplicationIntegrationTests(unittest.TestCase):
 
     @staticmethod
     def _fixture_download(ticker, **kwargs):
-        if ticker == "CNY=X":
-            return pd.DataFrame(
-                {"Open": [999.0, 6.8, 7.0, 999.0], "Close": [999.0, 6.8, 7.0, 999.0]},
-                index=pd.to_datetime(["2024-12-31", "2025-01-02", "2025-01-06", "2026-01-01"]),
-            )
-        if ticker == "CNH=X":
-            return pd.DataFrame(
-                {"Open": [999.0, 6.85, 7.05, 999.0], "Close": [999.0, 6.85, 7.05, 999.0]},
-                index=pd.to_datetime(["2024-12-31", "2025-01-02", "2025-01-06", "2026-01-01"]),
-            )
         if ticker != "USDCNY=X":
             raise AssertionError(f"未声明的行情依赖：{ticker}")
         # 两个不同年份的哨兵记录必须被排除。有效交易日是周四和下周一，
@@ -160,28 +150,23 @@ class ApplicationIntegrationTests(unittest.TestCase):
         self.assertEqual(result["summary"]["可变费用合计(人民币)"], 360.0)
         self.assertEqual(result["summary"]["总预算(人民币)"], round(440.0 + 15 * monthly_average, 2))
         self.assertEqual(result["extra_details"][0]["rmb_cost"], round(5 * monthly_average, 2))
-        self.assertEqual(result["rates"]["series"]["USD"], [4.0] * 5 + [9.0] * 26)
-        self.assertEqual(result["rates"]["series"]["CNY"], [1.0] * 31)
-        self.assertIn("CNH", result["rates"]["series"])
-        self.assertEqual(len(result["rates"]["series"]["CNH"]), 31)
-        self.assertTrue(all(value > 0 for value in result["rates"]["series"]["CNH"]))
-        self.assertNotIn("CNH", result["rates_dict"], "CNH 只能进入展示响应，不能传给预算公式")
-        cny_fixed = next(row for row in result["fixed_details"] if row["currency"] == "CNY")
-        self.assertEqual(cny_fixed["avg_rate"], 1.0)
+        self.assertNotIn("rates", result, "月度计算响应不再携带已删除图表模块的原始序列")
         self.assertEqual(result["rate_source"], {
             "kind": "current_month",
             "requested_month": "2025-01",
             "fallback": False,
         })
+        cny_fixed = next(row for row in result["fixed_details"] if row["currency"] == "CNY")
+        self.assertEqual(cny_fixed["avg_rate"], 1.0)
         self.assertEqual(result["warnings"], [])
         self.assertEqual(result["deduped_entries"], 0)
-        self.assertEqual(self.download.call_count, 3)
-        self.assertEqual({call.args[0] for call in self.download.call_args_list}, {"USDCNY=X", "CNY=X", "CNH=X"})
+        self.download.assert_called_once()
+        self.assertEqual(self.download.call_args.args[0], "USDCNY=X")
 
         cache = json.loads((self.rates_dir / "2025-01.json").read_text(encoding="utf-8"))
         self.assertEqual(cache["_meta"]["rate_kind"], "monthly_open_close_estimate")
         self.assertEqual(len(cache["USD"]), 31)
-        self.assertEqual(len(cache["CNH"]), 31)
+        self.assertEqual(len(cache["CNY"]), 31)
 
         itinerary = [
             {"location": "Shenzhen", "date": f"2025-01-{day:02d}", "is_travel": False}
@@ -191,7 +176,10 @@ class ApplicationIntegrationTests(unittest.TestCase):
             for day in (10, 11, 12)
         ]
         dates = pd.date_range("2025-01-01", "2025-01-31")
-        rates = {currency: pd.Series(values, index=dates) for currency, values in result["rates"]["series"].items()}
+        rates = {
+            "CNY": pd.Series(1.0, index=dates),
+            "USD": pd.Series([4.0] * 5 + [9.0] * 26, index=dates),
+        }
         explicit = functions.calculate_travel_budget(itinerary, "Mainland", 2025, 1, rates_dict=rates)
         automatic = functions.calculate_travel_budget(itinerary, "Mainland", 2025, 1)
         for field in ("summary", "daily_details", "fixed_details", "extra_details"):
@@ -202,7 +190,7 @@ class ApplicationIntegrationTests(unittest.TestCase):
                 compatible = functions.calculate_travel_budget(rows, "Mainland", 2025, 1)
                 for field in ("summary", "daily_details", "fixed_details", "extra_details"):
                     self.assertEqual(compatible[field], result[field])
-        self.assertEqual(self.download.call_count, 3)  # facade 下载编排复用本次测试的内存缓存。
+        self.assertEqual(self.download.call_count, 1)  # facade 下载编排复用本次测试的内存缓存。
 
     def test_annual_routes_use_only_actual_close_and_never_monthly_disk_cache(self):
         annual_rates = self.request("GET", "/api/annual-rates?year=2025&currencies=USD,CNY")

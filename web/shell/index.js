@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.shell = Object.freeze({
-    dependencies: Object.freeze(["analysis","annual","assets","http","calendar","data","feedback","itinerary","locations","monthly","navigation","network","persistence","rates","results","shared","standards","standardsEditor","standardsView","state","subscriptions","travel"]),
-    create({ analysis: analysisModule, annual: annualModule, assets: assetsModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["analysis","annual","assets","http","calendar","data","feedback","itinerary","locations","monthly","navigation","network","persistence","results","shared","standards","standardsEditor","standardsView","state","subscriptions","travel"]),
+    create({ analysis: analysisModule, annual: annualModule, assets: assetsModule, http: apiModule, calendar: calendarModule, data: dataModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, monthly: monthlyModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsEditor: standardsEditorModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       /* --------------------------------------------------------------------------
@@ -38,7 +38,7 @@
         sharedModule.$('#btn-next-month').addEventListener('click', () => monthlyModule.changeMonth(1));
         sharedModule.$('#btn-this-month').addEventListener('click', monthlyModule.goThisMonth);
 
-        // 区域选择（订阅固定预算与区域无关，仍用于月度计算结果分类）。
+        // 区域选择同时决定当前可见订阅及该区域的固定预算汇总。
         sharedModule.$('#region-seg').addEventListener('click', (ev) => {
           const btn = ev.target.closest('.seg-btn[data-region]');
           if (!btn || btn.dataset.region === state.region) return;
@@ -46,6 +46,7 @@
           persistenceModule.saveState(true);
           // 分段高亮即时更新
           sharedModule.$$('#region-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.region === state.region));
+          subscriptionsModule.render();
           standardsViewModule.renderStandards();
         });
 
@@ -86,7 +87,6 @@
         });
 
         // 订阅项目：每月独立快照，勾选项目的月均币种合计直接驱动固定预算。
-        sharedModule.$('#btn-add-subscription').addEventListener('click', subscriptionsModule.addItem);
         sharedModule.$('#subscription-list').addEventListener('input', (ev) => {
           const field = ev.target.closest('input[data-subscription-field="name"], input[data-subscription-field="amount"]');
           if (field) subscriptionsModule.updateField(field, { renderList: false });
@@ -98,6 +98,11 @@
           }
         });
         sharedModule.$('#subscription-list').addEventListener('click', (ev) => {
+          const addButton = ev.target.closest('button[data-action="add-subscription"]');
+          if (addButton) {
+            subscriptionsModule.addItem(addButton.dataset.currency);
+            return;
+          }
           const button = ev.target.closest('button[data-action="delete-subscription"]');
           const row = button && button.closest('.subscription-row');
           if (row) subscriptionsModule.deleteItem(row.dataset.subscriptionId);
@@ -301,7 +306,6 @@
         });
 
         window.addEventListener('resize', () => {
-          ratesModule.resizeRateCharts();
           analysisModule.resizeAnalysisChart();
         });
         sharedModule.$('#btn-network-retry').addEventListener('click', () => networkModule.runNetworkCheck(true));

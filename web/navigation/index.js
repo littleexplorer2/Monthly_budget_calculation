@@ -4,11 +4,11 @@
 (function register(registry) {
   'use strict';
   registry.navigation = Object.freeze({
-    dependencies: Object.freeze(["analysis","annual","assets","rates","shared","state"]),
-    create({ analysis: analysisModule, annual: annualModule, assets: assetsModule, rates: ratesModule, shared: sharedModule, state: stateModule }, service = {}) {
+    dependencies: Object.freeze(["analysis","annual","assets","shared","state"]),
+    create({ analysis: analysisModule, annual: annualModule, assets: assetsModule, shared: sharedModule, state: stateModule }, service = {}) {
       const { state } = stateModule;
       const BUDGET_TABS = Object.freeze(['subscriptions', 'standards', 'itinerary', 'result']);
-      const DASHBOARD_TABS = Object.freeze(['analysis', 'rates', 'assets']);
+      const DASHBOARD_TABS = Object.freeze(['analysis', 'assets']);
 
       function renderNavigation() {
         const dashboard = state.activeSection === 'dashboard';
@@ -43,16 +43,13 @@
 
       function refreshDashboard() {
         if (state.activeSection !== 'dashboard') return;
-        if (state.activeDashboardTab === 'rates') {
-          ratesModule.renderRatesPanel();
-        } else if (state.activeDashboardTab === 'assets') {
+        if (state.activeDashboardTab === 'assets') {
           assetsModule.render();
         } else {
           annualModule.renderAnnualBudget();
           analysisModule.renderAnalysis();
         }
         setTimeout(() => {
-          ratesModule.resizeRateCharts();
           analysisModule.resizeAnalysisChart();
         }, 60);
       }

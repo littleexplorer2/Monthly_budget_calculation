@@ -16,7 +16,6 @@ module.exports = Object.freeze({
   standardsEditor: 'standards-editor',
   standardsView: 'standards-view',
   calendar: 'calendar',
-  rates: 'rates',
   results: 'results',
   subscriptions: 'subscriptions',
   monthly: 'monthly',

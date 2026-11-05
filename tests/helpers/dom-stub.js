@@ -479,11 +479,11 @@ function defaultStateFixture() {
  * @param {object} options.meta  可注入的 /api/meta 返回；默认用内存固定夹具
  * @param {object} options.state  可注入的 GET /api/state 返回
  * @param {boolean|object|function} options.statePutFailure  模拟 PUT /api/state 失败
- * @param {object|function} options.monthlyRates 可注入的 GET /api/rates 返回
  * @param {object|function} options.monthlyBudget 可注入的 POST /api/calculate 返回
  * @param {object|function} options.annualRates  可注入的 GET /api/annual-rates 返回
  * @param {object|function} options.assetRates   可注入的 GET /api/asset-rates 返回
  * @param {object|function} options.annualBudget 可注入的 POST /api/annual-budget 返回
+ * @param {object|function} options.networkCheck 可注入的 GET /api/network-check 返回
  */
 function createApp(options = {}) {
   const root = path.join(__dirname, '..', '..');
@@ -540,7 +540,9 @@ function createApp(options = {}) {
         }
         return send(request.method === 'GET' ? initialState : {});
       }
-      if (u.includes('/api/network-check')) return send({ ok: true });
+      if (u.includes('/api/network-check')) {
+        return send(await responseValue(options.networkCheck, request, { ok: true }));
+      }
       if (u.includes('/api/asset-rates')) {
         return send(await responseValue(options.assetRates, request, {
           kind: 'trailing_365_day_close_average',
@@ -573,16 +575,10 @@ function createApp(options = {}) {
           complete: true,
         }));
       }
-      if (u.includes('/api/rates')) {
-        return send(await responseValue(options.monthlyRates, request, {
-          dates: [], series: {}, stats: {},
-        }));
-      }
       if (u.includes('/api/calculate')) {
         return send(await responseValue(options.monthlyBudget, request, {
           summary: { '预算总计': 0 },
           daily_details: [], fixed_details: [], extra_details: [], warnings: [],
-          rates: { dates: [], series: {}, stats: {} },
         }));
       }
       if (u.includes('/api/annual-budget')) {
@@ -645,7 +641,7 @@ function createApp(options = {}) {
       renderAnnualBudget: modules.annual.renderAnnualBudget, loadAnnualRates: modules.annual.loadAnnualRates, calculateAnnualBudget: modules.annual.calculateAnnualBudget, invalidateAnnualResult: modules.annual.invalidateAnnualResult,
       annualBudgetAmounts: modules.annual.annualBudgetAmounts, annualCurrencies: modules.annual.annualCurrencies, snapshotBundle: modules.persistence.snapshotBundle, applyBundle: modules.persistence.applyBundle, switchTab: modules.shell.switchTab, openSection: modules.navigation.openSection,
       collectAnalysisMonths: modules.analysis.collectAnalysisMonths, markCurrentResultStale: modules.results.markCurrentResultStale, addRange: modules.itinerary.addRange, deleteMonthData: modules.data.deleteMonthData,
-      loadRates: modules.rates.loadRates, calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth, navigateToMonth: modules.monthly.navigateToMonth,
+      calculate: modules.monthly.calculate, changeMonth: modules.monthly.changeMonth, navigateToMonth: modules.monthly.navigateToMonth,
       renderSubscriptions: modules.subscriptions.render, addSubscription: modules.subscriptions.addItem, updateSubscription: modules.subscriptions.updateField, subscriptionTotals: modules.subscriptions.totals, ensureSubscriptions: modules.subscriptions.ensureMonth,
       renderAssets: modules.assets.render, loadAssetRates: modules.assets.loadRates, assetRateState: modules.assets.rateState, addAsset: modules.assets.addItem, updateAsset: modules.assets.updateField, updateAssetSetting: modules.assets.updateSetting, assetPortfolio: modules.assets.portfolio, assetSummary: modules.assets.compute,
     };

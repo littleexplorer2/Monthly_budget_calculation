@@ -20,7 +20,7 @@ REGION_NAMES = {"Mainland": "内地", "Overseas": "境外"}
 
 
 CURRENCY_NAMES = {
-    "CNY": "人民币", "CNH": "离岸人民币", "HKD": "港币", "USD": "美元",
+    "CNY": "人民币", "HKD": "港币", "USD": "美元",
     "TWD": "新台币", "THB": "泰铢",
 }
 

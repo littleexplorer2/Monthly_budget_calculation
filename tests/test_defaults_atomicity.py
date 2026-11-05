@@ -94,6 +94,7 @@ class DefaultsAtomicityTests(unittest.TestCase):
             "cycle": "yearly",
             "amount": 120.0,
             "includeByDefault": True,
+            "appliesTo": {"Mainland": True, "Overseas": False},
         }]
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "defaults.json"
@@ -111,6 +112,16 @@ class DefaultsAtomicityTests(unittest.TestCase):
                     invalid["subscriptions"] = [{**payload["subscriptions"][0], "amount": -1}]
                     with self.assertRaisesRegex(ValueError, "amount"):
                         defaults.save_default_standards(invalid, expected_revision=after["revision"])
+                    invalid_regions = self._payload(after)
+                    invalid_regions["subscriptions"] = [{
+                        **payload["subscriptions"][0],
+                        "appliesTo": {"Mainland": False, "Overseas": False},
+                    }]
+                    with self.assertRaisesRegex(ValueError, "至少选择一个预算区域"):
+                        defaults.save_default_standards(
+                            invalid_regions,
+                            expected_revision=after["revision"],
+                        )
             finally:
                 with defaults._DEFAULTS_LOCK:
                     defaults._apply_defaults_dict(

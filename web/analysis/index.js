@@ -111,8 +111,8 @@
         if (legend) {
           const bits = [];
           if (showRegion) {
-            bits.push('<span class="lg-item"><i class="lg-dot" style="background:#00c48c"></i>内地</span>');
-            bits.push('<span class="lg-item"><i class="lg-dot" style="background:#3d7eff"></i>境外</span>');
+            bits.push('<span class="lg-item"><i class="lg-dot" style="background:#00805f"></i>内地</span>');
+            bits.push('<span class="lg-item"><i class="lg-dot" style="background:#265fce"></i>境外</span>');
           }
           if (showTravel) {
             bits.push('<span class="lg-item"><i class="lg-dot" style="background:#8a9299"></i>不含旅居</span>');
@@ -140,7 +140,7 @@
 
         const data = rows.map((m) => ({
           value: m.amount,
-          itemStyle: { color: showRegion ? (m.region === 'Overseas' ? '#3d7eff' : '#00c48c') : '#00c48c' },
+          itemStyle: { color: showRegion ? (m.region === 'Overseas' ? '#265fce' : '#00805f') : '#00805f' },
           symbol: showTravel ? (m.includeTravel ? 'diamond' : 'circle') : 'circle',
           symbolSize: showTravel && m.includeTravel ? 14 : 9,
         }));
@@ -152,9 +152,10 @@
         state.analysisChart.setOption({
           tooltip: {
             trigger: 'axis',
-            backgroundColor: 'rgba(12, 20, 28, 0.94)',
-            borderColor: 'rgba(255,255,255,0.14)',
-            textStyle: { color: '#f4f8fb' },
+            backgroundColor: 'rgba(255, 255, 255, 0.98)',
+            borderColor: '#e2e9ed',
+            textStyle: { color: '#324c5b' },
+            extraCssText: 'box-shadow:0 8px 24px rgba(50,76,91,.14);border-radius:8px;',
             formatter: (params) => {
               const p = params && params[0];
               if (!p) return '';
@@ -171,22 +172,22 @@
           xAxis: {
             type: 'category',
             data: rows.map((m) => m.key),
-            axisLine: { lineStyle: { color: '#3a4b59' } },
-            axisTick: { lineStyle: { color: '#3a4b59' } },
+            axisLine: { lineStyle: { color: '#c8d4db' } },
+            axisTick: { lineStyle: { color: '#c8d4db' } },
             axisLabel: {
               interval: 0,
               hideOverlap: true,
-              color: '#91a4b5',
+              color: '#5a6f7c',
               formatter: (value) => service.monthKeyToLabel(value),
             },
           },
           yAxis: {
             type: 'value',
             name: '总预算（人民币）',
-            nameTextStyle: { color: '#91a4b5' },
-            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+            nameTextStyle: { color: '#5a6f7c' },
+            splitLine: { lineStyle: { color: '#edf2f5' } },
             axisLabel: {
-              color: '#91a4b5',
+              color: '#5a6f7c',
               formatter: (v) => (v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v)),
             },
           },
@@ -196,7 +197,7 @@
             smooth: true,
             showSymbol: true,
             symbol: 'circle',
-            lineStyle: { width: 3, color: '#00c48c' },
+            lineStyle: { width: 3, color: '#00805f' },
             data,
           }],
         }, true);

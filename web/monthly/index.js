@@ -4,8 +4,8 @@
 (function register(registry) {
   'use strict';
   registry.monthly = Object.freeze({
-    dependencies: Object.freeze(["http","calendar","feedback","itinerary","locations","navigation","network","persistence","rates","results","shared","standards","standardsView","state","subscriptions","travel"]),
-    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, rates: ratesModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
+    dependencies: Object.freeze(["http","calendar","feedback","itinerary","locations","navigation","network","persistence","results","shared","standards","standardsView","state","subscriptions","travel"]),
+    create({ http: apiModule, calendar: calendarModule, feedback: feedbackModule, itinerary: itineraryModule, locations: locationsModule, navigation: navigationModule, network: networkModule, persistence: persistenceModule, results: resultsModule, shared: sharedModule, standards: standardsModule, standardsView: standardsViewModule, state: stateModule, subscriptions: subscriptionsModule, travel: travelModule }, service = {}) {
       const { state } = stateModule;
 
       function monthKey() { return `${state.year}-${sharedModule.pad2(state.month)}`; }
@@ -68,8 +68,10 @@
           state.resultsByMonth,
         ].some((map) => service.monthMapHasData(map, key));
         const subscriptions = state.subscriptionsByMonth && state.subscriptionsByMonth[key];
-        return regularData || !!(subscriptions && Array.isArray(subscriptions.items)
-          && subscriptions.items.length);
+        return regularData || !!(subscriptions && (
+          (Array.isArray(subscriptions.items) && subscriptions.items.length)
+          || (Array.isArray(subscriptions.retiredIds) && subscriptions.retiredIds.length)
+        ));
       }
 
       function confirmMonthCreation(year, month) {
@@ -158,10 +160,6 @@
             includeTravel: requestIncludeTravel,
           }); // 先确认项目状态是否真正落盘
           if (service.monthKey() === requestMonthKey) {
-            // 统计面板只展示本次计算实际使用的行情，不再另设月度拉取操作。
-            state.ratesData = result.rates;
-            state.ratesMonth = requestMonthKey;
-            state.ratesSource = result.rate_source || null;
             resultsModule.renderResult();
             if (!automatic) navigationModule.openBudgetTab('result');
           }
@@ -178,7 +176,7 @@
           return true;
         } catch (err) {
           feedbackModule.toast(automatic ? `自动更新月度预算失败：${err.message}` : err.message, 'error');
-          networkModule.maybeShowNetworkWarning(err.message); // 计算中的汇率拉取失败 → 同步提示网络异常/VPN
+          networkModule.maybeShowNetworkWarning(err.message); // 计算中的汇率拉取失败 → 同步提示 Yahoo 数据源请求失败
           return false;
         } finally {
           state.busy = false;
@@ -186,7 +184,7 @@
         }
       }
 
-      /** 切换月份时同步切换当月全部页面数据：预算标准、行程、汇率、计算结果，
+      /** 切换月份时同步切换当月全部页面数据：预算标准、行程、计算结果，
        *  以及该月保存的居住区域 / 是否包含旅居 / 旅居地点勾选。 */
       function switchMonthData() {
         service.applyMonthOptions(service.monthKey());
@@ -215,16 +213,6 @@
         subscriptionsModule.render();
         service.syncOptionsUI();
         sharedModule.$('#itinerary-month').textContent = `${state.year}年${state.month}月`;
-        sharedModule.$('#rates-title').textContent = `${state.year}年${state.month}月 汇率走势（兑人民币）`;
-        if (state.ratesMonth !== service.monthKey()) {
-          state.ratesData = null;
-          state.ratesSource = null;
-          ratesModule.destroyRateCharts();
-          const charts = sharedModule.$('#rates-charts');
-          if (charts) charts.innerHTML = '';
-          const stats = sharedModule.$('#rates-stats-table');
-          if (stats) stats.innerHTML = '';
-        }
         calendarModule.renderCalendar();
         itineraryModule.renderItinerary();
         calendarModule.updateManualDefaults();

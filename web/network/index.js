@@ -8,13 +8,13 @@
     create({ http: apiModule, feedback: feedbackModule, shared: sharedModule }, service = {}) {
 
       /* --------------------------------------------------------------------------
-       * Yahoo Finance 连通性检测（打开页面时自动执行，失败时提示打开 VPN）
+       * Yahoo Finance 数据源连通性检测（打开页面时自动执行）
        * ------------------------------------------------------------------------ */
       function showNetworkWarning(message) {
         const banner = sharedModule.$('#network-banner');
         if (!banner) return;
         sharedModule.$('#network-banner-text').textContent = message
-          || '网络异常：无法连接 Yahoo Finance 获取汇率数据，请打开 VPN 后重试。';
+          || '暂时无法从 Yahoo Finance 获取汇率数据；请稍后重试，若持续失败再检查网络或代理设置。';
         feedbackModule.setElVisible(banner, true);
       }
 
@@ -24,13 +24,13 @@
 
       async function runNetworkCheck(manual = false) {
         try {
-          const data = await apiModule.api('/api/network-check', { timeout: 20000 });
+          const data = await apiModule.api('/api/network-check', { timeout: 30000 });
           if (data && data.ok === true) {
             service.hideNetworkWarning();
             if (manual) feedbackModule.toast('网络正常：Yahoo Finance 可正常访问', 'success');
           } else {
             const msg = (data && data.hint)
-              || '网络异常：无法连接 Yahoo Finance 获取汇率数据，请打开 VPN 后重试。';
+              || '暂时无法从 Yahoo Finance 获取汇率数据；请稍后重试，若持续失败再检查网络或代理设置。';
             service.showNetworkWarning(msg);
             if (manual) feedbackModule.toast(msg, 'error');
           }
@@ -43,7 +43,9 @@
       /** 汇率相关请求失败（502/下载异常）时，同步点亮网络横幅 */
       function maybeShowNetworkWarning(errorMessage) {
         if (/汇率|下载|Yahoo/i.test(String(errorMessage))) {
-          service.showNetworkWarning();
+          service.showNetworkWarning(
+            'Yahoo Finance 汇率请求失败；请重试，若持续失败再检查网络或代理设置。',
+          );
         }
       }
 

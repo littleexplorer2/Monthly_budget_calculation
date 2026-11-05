@@ -30,7 +30,9 @@
        *  - 默认（不传 locs）：只显示本次勾选的旅居地点，供「当月预算」面板使用；
        *  - 传 locs：按给定的地点列表渲染（默认标准弹窗用它显示全部或本月对应的部分）。
        *  customs 为自定义旅居地点（当月或草稿），同样按 locs / 勾选状态过滤。 */
-      function renderTravelStandardsBlocks({ values, chipFor, customs, locs, emptyText, ruleText }) {
+      function renderTravelStandardsBlocks({
+        values, chipFor, customs, locs, emptyText, ruleText, showRule = true,
+      }) {
         const all = Object.keys(values.travel || {});
         const explicit = Array.isArray(locs);
         const wanted = explicit ? locs.filter((loc) => all.includes(loc)) : all.filter(travelModule.isTravelLocationSelected);
@@ -65,7 +67,7 @@
         if (!rows) rows = `<p class="empty">${sharedModule.esc(emptyText || '请先在上方勾选本次包含的旅居地点')}</p>`;
         return `<div class="sheet-head"><h2>旅居预算</h2>
             <button type="button" class="text-btn" data-action="add-std" data-cat="travel">＋ 新建旅居地点</button></div>
-          <p class="sheet-rule">${sharedModule.esc(ruleText || '每日预算 × 旅游天数 + 单次预算 × 月均汇率。仅显示已勾选地点。')}</p>
+          ${showRule ? `<p class="sheet-rule">${sharedModule.esc(ruleText || '每日预算 × 旅游天数 + 单次预算 × 月均汇率。仅显示已勾选地点。')}</p>` : ''}
           <div class="row-list" data-table="travel">${rows}</div>`;
       }
 
@@ -74,7 +76,7 @@
         const defs = state.meta.default_standards;
         const values = state.standards;
         standardsModule.ensureExtraStandards();
-        const extraColor = { CNY: '#00c48c', USD: '#3d7eff', HKD: '#ff8a3d' };
+        const extraColor = { CNY: '#00805f', USD: '#265fce', HKD: '#b45309' };
 
         let html = '';
         for (const loc of Object.keys(state.monthStandardsSnapshot ? values.variable : defs.variable)) {
@@ -108,7 +110,7 @@
         const derivedFixed = (values.fixed && (values.fixed.Mainland || values.fixed.Overseas)) || {};
         for (const curr of sharedModule.EXTRA_CURRENCIES) {
           html += sharedModule.budgetRowHtml({
-            color: extraColor[curr] || '#7b61ff',
+            color: extraColor[curr] || '#6d28d9',
             letter: curr.slice(0, 1),
             title: `${sharedModule.esc(curr)}（${sharedModule.esc(locationsModule.currencyName(curr))}）`,
             sub: '本月已勾选订阅的月均合计',
@@ -161,9 +163,7 @@
           });
         }
         const budgetBlocks = [];
-        budgetBlocks.push(`<div class="sheet-head"><h3>各地点 / 币种每日固定预算 <span class="muted">· 原可变预算</span></h3>
-            <button type="button" class="text-btn" data-action="add-std" data-cat="variable">＋ 新建定居地点</button></div>
-          <div class="row-list" data-table="variable">${html || '<p class="empty">暂无定居地点</p>'}</div>`);
+        budgetBlocks.push(`<div class="row-list" data-table="variable">${html || '<p class="empty">暂无定居地点</p>'}</div>`);
 
         // 旅居预算：默认标准弹窗里始终显示（不再依赖「包含旅居」开关），
         // 未勾选「显示全部旅居预算」时只列本月行程里出现过的旅居地点。
@@ -175,11 +175,12 @@
           emptyText: state.defaultsShowAll
             ? '暂无旅居地点'
             : '本月行程里还没有旅居地点；勾选上方「显示全部旅居预算」可查看全部。',
-          ruleText: '每日预算 × 旅游天数 + 单次预算 × 月均汇率。',
+          showRule: false,
         }));
         host.innerHTML = `<section class="defaults-section defaults-budget-section">
           <div class="defaults-section-head">
             <div><span class="eyebrow">01 · DAILY & TRAVEL</span><h2>每日与旅居预算标准</h2></div>
+            <button type="button" class="text-btn" data-action="add-std" data-cat="variable">＋ 新建定居地点</button>
           </div>
           <div class="defaults-section-body">${budgetBlocks.join('')}</div>
         </section>${standardsEditorModule.defaultSubscriptionsHtml()}`;

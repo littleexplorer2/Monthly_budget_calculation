@@ -4,6 +4,8 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 
@@ -19,6 +21,31 @@ def run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 class RepositoryUploadTests(unittest.TestCase):
+    def test_api_requires_explicit_user_confirmation_before_uploading_user_data(self):
+        with self.assertRaisesRegex(
+                repository_service.app_contracts.RepositoryUploadError,
+                "用户明确确认",
+        ):
+            repository_service._upload_data_to_remote()
+
+        with mock.patch.object(
+                repository_service,
+                "_upload_data_to_remote",
+                return_value={"uploaded": True},
+        ) as upload:
+            with self.assertRaisesRegex(
+                    repository_service.app_contracts.RepositoryUploadError,
+                    "用户明确确认",
+            ):
+                repository_service.api_data_upload(SimpleNamespace(user_confirmed=False))
+            upload.assert_not_called()
+
+            self.assertEqual(
+                repository_service.api_data_upload(SimpleNamespace(user_confirmed=True)),
+                {"uploaded": True},
+            )
+            upload.assert_called_once_with(user_confirmed=True)
+
     def test_upload_commits_budget_state_and_defaults_but_not_rate_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             temp_dir = Path(temp)
@@ -54,7 +81,10 @@ class RepositoryUploadTests(unittest.TestCase):
             other_file.write_text("keep staged", encoding="utf-8")
             run_git(root, "add", "--", "other.txt")
 
-            result = repository_service._upload_data_to_remote(project)
+            result = repository_service._upload_data_to_remote(
+                project,
+                user_confirmed=True,
+            )
 
             self.assertTrue(result["uploaded"])
             self.assertTrue(result["committed"])

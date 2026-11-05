@@ -129,8 +129,8 @@ def api_data_rates_delete(body: app_contracts.MonthListIn):
 
 
 @app.post('/api/data/upload')
-def api_data_upload():
-    return app_repository.data_upload()
+def api_data_upload(body: app_contracts.DataUploadRequest):
+    return app_repository.data_upload(body)
 
 
 @app.get('/api/state')
@@ -156,11 +156,6 @@ def api_save_defaults(body: app_contracts.DefaultsPayload):
 @app.post('/api/defaults/reset')
 def api_reset_defaults(body: app_contracts.DefaultsResetIn):
     return app_metadata.reset_defaults(body)
-
-
-@app.get('/api/rates')
-def api_rates(year: int, month: int, currencies: str | None=Query(default=None, description='逗号分隔的币种列表，缺省为全部'), refresh: bool=Query(default=False, description='为 true 时忽略内存/磁盘缓存，重新向 Yahoo Finance 下载')):
-    return app_rates.rates(year, month, currencies, refresh)
 
 
 @app.get('/api/annual-rates')

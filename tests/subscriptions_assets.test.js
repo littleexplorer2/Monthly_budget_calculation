@@ -15,6 +15,7 @@ function subscription(id, overrides = {}) {
     amount: 10,
     included: true,
     includeByDefault: true,
+    appliesTo: { Mainland: true, Overseas: true },
     ...overrides,
   };
 }
@@ -101,8 +102,9 @@ test('新月份按计入默认继承订阅，但修改目标月不反写过去�
 
   const october = app.state.subscriptionsByMonth['2026-10'];
   assert.deepEqual(JSON.parse(JSON.stringify(october.items.map((item) => [item.id, item.included]))), [
-    ['keep', true], ['skip', false],
+    ['keep', true],
   ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(october.retiredIds)), ['skip']);
 
   const keep = doc.querySelector('[data-subscription-id="keep"] input[data-subscription-field="included"]');
   keep.checked = false;
@@ -136,19 +138,20 @@ test('首次启用默认订阅目录时把旧月份项目迁入弹窗草稿', as
   const skip = doc.querySelector(
     '[data-default-subscription-id="skip"] input[data-default-subscription-field="includeByDefault"]',
   );
-  assert.ok(keep && skip, '旧月份项目应先进入默认配置草稿，不能显示为空');
+  assert.ok(keep, '旧月份中仍计入默认的项目应进入默认配置草稿');
+  assert.equal(skip, null, '未计入默认的项目不应显示在默认预算标准中');
   assert.equal(keep.checked, true);
-  assert.equal(skip.checked, false);
   assert.equal(app.state.defaultsDraft.subscriptions.length, 2,
-    '首次保存会把迁移草稿写成正式默认订阅目录');
+    '隐藏的非默认项目仍留在草稿中，保存时不会误改历史快照');
 
   assert.equal(app.navigateToMonth(2026, 10), true);
   assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].items.map((item) => (
     [item.id, item.included]
-  )))), [['keep', true], ['skip', false]], '正式目录保存前仍应保留旧版默认继承语义');
+  )))), [['keep', true]], '未计入默认的项目应从新月份消失');
+  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].retiredIds)), ['skip']);
 });
 
-test('本月条目使用计入默认文案，默认目录字段仍只由配置弹窗维护', async () => {
+test('本月条目把计入默认与计入当月预算拆开，两个状态互不代替', async () => {
   const meta = defaultMetaFixture();
   meta.default_subscriptions_configured = true;
   meta.default_subscriptions = [
@@ -165,9 +168,30 @@ test('本月条目使用计入默认文案，默认目录字段仍只由配置�
   const { doc, app } = createApp({ meta, state });
   await app.init();
 
-  assert.equal(doc.querySelector('#subscription-list .subscription-toggle span').textContent, '计入默认');
-  assert.equal(doc.querySelector('#subscription-list [data-subscription-field="includeByDefault"]'), null,
-    '本月订阅分区不应再混放默认勾选框');
+  const row = doc.querySelector('[data-subscription-id="keep"]');
+  const includeByDefault = row.querySelector('input[data-subscription-field="includeByDefault"]');
+  const included = row.querySelector('input[data-subscription-field="included"]');
+  assert.ok(includeByDefault && included, '每张本月订阅卡必须同时提供两个独立勾选框');
+  assert.match(row.textContent, /计入默认/);
+  assert.match(row.textContent, /计入当月预算/);
+  assert.equal(includeByDefault.checked, false);
+  assert.equal(included.checked, false);
+
+  included.checked = true;
+  included.dispatchEvent({ type: 'change', bubbles: true, target: included });
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true);
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].includeByDefault, false,
+    '计入当月预算不得改写下月默认状态');
+
+  const rerenderedDefault = doc.querySelector(
+    '[data-subscription-id="keep"] input[data-subscription-field="includeByDefault"]',
+  );
+  rerenderedDefault.checked = true;
+  rerenderedDefault.dispatchEvent({ type: 'change', bubbles: true, target: rerenderedDefault });
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true);
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].includeByDefault, true,
+    '计入默认不得取消当前月预算勾选');
+
   doc.querySelector('#btn-defaults-modal').click();
   const defaultCheckbox = doc.querySelector(
     '[data-default-subscription-id="keep"] input[data-default-subscription-field="includeByDefault"]',
@@ -175,18 +199,192 @@ test('本月条目使用计入默认文案，默认目录字段仍只由配置�
   assert.ok(defaultCheckbox, '默认勾选框应位于默认配置弹窗的订阅管理部分');
   assert.ok(doc.querySelector('.defaults-budget-section'));
   assert.ok(doc.querySelector('.defaults-subscriptions-section'));
-  assert.doesNotMatch(doc.querySelector('.defaults-budget-section').textContent,
-    /维护各地点的每日固定预算与旅居标准/);
+  const defaultsBudget = doc.querySelector('.defaults-budget-section');
+  assert.doesNotMatch(defaultsBudget.textContent,
+    /维护各地点的每日固定预算与旅居标准|各地点 \/ 币种每日固定预算|原可变预算|每日预算 × 旅游天数/);
+  const addSettlement = defaultsBudget.querySelector('[data-action="add-std"][data-cat="variable"]');
+  assert.ok(addSettlement.closest('.defaults-section-head'), '新建定居地点按钮应与主标题位于同一行');
 
   assert.equal(app.navigateToMonth(2026, 10), true);
   assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].items.map((item) => (
     [item.id, item.name, item.amount, item.included]
   )))), [
     ['keep', '保留项目', 20, true],
-    ['skip', '暂不计入', 600, false],
   ]);
-  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, false,
-    '使用默认目录创建十月不能修改九月快照');
+  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-10'].retiredIds)), ['skip']);
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].included, true,
+    '创建十月不能回写九月已经单独勾选的当月状态');
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].amount, 10,
+    '九月单独金额必须保留，十月应重新使用默认目录中的 20');
+});
+
+test('永久取消只清理后续月份并用墓碑阻止默认目录重新加入，过去月份保持原样', async () => {
+  const meta = defaultMetaFixture();
+  meta.default_subscriptions_configured = true;
+  meta.default_subscriptions = [
+    { id: 'cancelled', name: '已取消服务', currency: 'USD', cycle: 'monthly', amount: 20, includeByDefault: true },
+  ];
+  const state = defaultStateFixture();
+  state.subscriptionsByMonth['2026-08'] = {
+    items: [subscription('cancelled', { amount: 8 })],
+  };
+  state.subscriptionsByMonth['2026-09'] = {
+    items: [subscription('cancelled', { amount: 9, included: true })],
+  };
+  state.subscriptionsByMonth['2026-10'] = {
+    items: [subscription('cancelled', { amount: 10 })],
+  };
+  state.subscriptionsByMonth['2026-11'] = {
+    items: [subscription('cancelled', { amount: 11 })],
+  };
+  const { doc, app } = createApp({ meta, state });
+  await app.init();
+
+  const checkbox = doc.querySelector(
+    '[data-subscription-id="cancelled"] input[data-subscription-field="includeByDefault"]',
+  );
+  checkbox.checked = false;
+  checkbox.dispatchEvent({ type: 'change', bubbles: true, target: checkbox });
+
+  assert.equal(app.state.subscriptionsByMonth['2026-08'].items[0].amount, 8);
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].amount, 9);
+  assert.equal(app.state.subscriptionsByMonth['2026-09'].items[0].includeByDefault, false);
+  for (const month of ['2026-10', '2026-11']) {
+    assert.equal(app.state.subscriptionsByMonth[month].items.length, 0, `${month} 不应再保留已取消项目`);
+    assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth[month].retiredIds)), ['cancelled']);
+  }
+
+  assert.equal(app.navigateToMonth(2026, 12), true);
+  assert.equal(app.state.subscriptionsByMonth['2026-12'].items.length, 0,
+    '默认目录仍有同 ID 项目时，取消墓碑也必须阻止十二月重新加入');
+  assert.deepEqual(JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-12'].retiredIds)), ['cancelled']);
+
+  doc.querySelector('#btn-defaults-modal').click();
+  assert.equal(doc.querySelector('[data-default-subscription-id="cancelled"]'), null,
+    '永久取消的项目不应再显示在默认预算标准中');
+});
+
+test('三种币种各自新增本月订阅，卡片内不提供改币种下拉框', async () => {
+  const { doc, app } = createApp();
+  await app.init();
+
+  assert.equal(doc.querySelector('#btn-add-subscription'), null,
+    '不应保留会默认写入 CNY 的全局新增按钮');
+  const buttons = doc.querySelectorAll('#subscription-list [data-action="add-subscription"]');
+  assert.equal(buttons.length, 3);
+
+  const hkdButton = doc.querySelector(
+    '[data-subscription-currency="HKD"] [data-action="add-subscription"]',
+  );
+  hkdButton.click();
+  const snapshot = app.state.subscriptionsByMonth['2026-09'];
+  assert.equal(snapshot.items.length, 1);
+  assert.equal(snapshot.items[0].currency, 'HKD');
+  const row = doc.querySelector(`[data-subscription-id="${snapshot.items[0].id}"]`);
+  assert.equal(row.closest('[data-subscription-currency="HKD"]') !== null, true);
+  assert.equal(row.querySelector('select[data-subscription-field="currency"]'), null);
+  assert.equal(doc.querySelectorAll('#subscription-list select[data-subscription-field="currency"]').length, 0);
+});
+
+test('订阅地点下拉独立控制内地与海外显示和固定预算汇总', async () => {
+  const state = defaultStateFixture();
+  state.optionsByMonth['2026-09'] = {
+    region: 'Mainland', includeTravel: false, travelSelected: null,
+  };
+  state.subscriptionsByMonth['2026-09'] = {
+    items: [
+      subscription('mainland', {
+        currency: 'CNY', amount: 10,
+        appliesTo: { Mainland: true, Overseas: false },
+      }),
+      subscription('overseas', {
+        currency: 'CNY', amount: 20,
+        appliesTo: { Mainland: false, Overseas: true },
+      }),
+      subscription('both', { currency: 'CNY', amount: 5 }),
+    ],
+  };
+  const { doc, app } = createApp({ state });
+  await app.init();
+
+  assert.ok(doc.querySelector('[data-subscription-id="mainland"]'));
+  assert.equal(doc.querySelector('[data-subscription-id="overseas"]'), null);
+  const both = doc.querySelector('[data-subscription-id="both"]');
+  assert.ok(both.querySelector('details.subscription-region-picker'));
+  const bothRegionToggles = both.querySelectorAll('input[data-subscription-field="appliesTo"]');
+  assert.equal(bothRegionToggles.length, 2);
+  assert.ok(bothRegionToggles.every((input) => input.checked));
+  assert.deepEqual(JSON.parse(JSON.stringify(app.subscriptionTotals())), { CNY: 15, HKD: 0, USD: 0 });
+  assert.equal(app.state.standards.fixed.Mainland.CNY, 15);
+  assert.equal(app.state.standards.fixed.Overseas.CNY, 25);
+
+  const overseasToggle = both.querySelector('input[data-region="Overseas"]');
+  overseasToggle.checked = false;
+  overseasToggle.dispatchEvent({ type: 'change', bubbles: true, target: overseasToggle });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-09'].items[2].appliesTo)),
+    { Mainland: true, Overseas: false },
+  );
+  assert.equal(app.state.standards.fixed.Overseas.CNY, 20);
+
+  doc.querySelector('#region-seg .seg-btn[data-region="Overseas"]').click();
+  assert.equal(doc.querySelector('[data-subscription-id="mainland"]'), null);
+  assert.equal(doc.querySelector('[data-subscription-id="both"]'), null);
+  assert.ok(doc.querySelector('[data-subscription-id="overseas"]'));
+  assert.deepEqual(JSON.parse(JSON.stringify(app.subscriptionTotals())), { CNY: 20, HKD: 0, USD: 0 });
+});
+
+test('订阅地点至少保留一个，避免卡片在两个预算区域都不可访问', async () => {
+  const state = defaultStateFixture();
+  state.subscriptionsByMonth['2026-09'] = {
+    items: [subscription('mainland-only', {
+      appliesTo: { Mainland: true, Overseas: false },
+    })],
+  };
+  const { doc, app } = createApp({ state });
+  await app.init();
+
+  const toggle = doc.querySelector(
+    '[data-subscription-id="mainland-only"] input[data-region="Mainland"]',
+  );
+  toggle.checked = false;
+  toggle.dispatchEvent({ type: 'change', bubbles: true, target: toggle });
+  assert.equal(toggle.checked, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(app.state.subscriptionsByMonth['2026-09'].items[0].appliesTo)),
+    { Mainland: true, Overseas: false },
+  );
+});
+
+test('默认订阅卡片的地点下拉兼容旧数据并让新卡片默认勾选两个区域', async () => {
+  const meta = defaultMetaFixture();
+  meta.default_subscriptions_configured = true;
+  meta.default_subscriptions = [{
+    id: 'legacy-default', name: '旧默认项目', currency: 'CNY', cycle: 'monthly',
+    amount: 8, includeByDefault: true,
+  }];
+  const { doc, app } = createApp({ meta });
+  await app.init();
+
+  doc.querySelector('#btn-defaults-modal').click();
+  const legacy = doc.querySelector('[data-default-subscription-id="legacy-default"]');
+  assert.match(legacy.textContent, /对内地预算使用/);
+  assert.match(legacy.textContent, /对海外预算使用/);
+  assert.ok(legacy.querySelectorAll(
+    'input[data-default-subscription-field="appliesTo"]',
+  ).every((input) => input.checked));
+
+  doc.querySelector('[data-action="add-default-subscription"]').click();
+  const created = app.state.defaultsDraft.subscriptions.at(-1);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(created.appliesTo)),
+    { Mainland: true, Overseas: true },
+  );
+  const createdToggles = doc.querySelectorAll(
+    `[data-default-subscription-id="${created.id}"] input[data-default-subscription-field="appliesTo"]`,
+  );
+  assert.equal(createdToggles.length, 2);
+  assert.ok(createdToggles.every((input) => input.checked));
 });
 
 test('删除一个月份后再次确认创建，可重新按最近过去月份的默认勾选生成', async () => {

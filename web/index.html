@@ -6,7 +6,7 @@
   <title>每月预算</title>
   <style>[hidden]{display:none!important}</style>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/style.css?v=20261102-asset-trailing-rates">
+  <link rel="stylesheet" href="css/style.css?v=20261105-spendee-light">
 </head>
 <body>
   <noscript>
@@ -84,7 +84,6 @@
         <nav class="dashboard-nav dashboard-only" aria-label="统计面板分区">
           <button type="button" class="dashboard-nav-item active" data-dashboard-tab="analysis">年度总览</button>
           <button type="button" class="dashboard-nav-item" data-dashboard-tab="assets">资产管理</button>
-          <button type="button" class="dashboard-nav-item" data-dashboard-tab="rates">汇率走势</button>
         </nav>
 
         <div class="context-actions budget-only">
@@ -94,7 +93,7 @@
       </div>
 
       <div id="network-banner" class="network-banner" hidden role="alert">
-        <span id="network-banner-text">网络异常：无法连接 Yahoo Finance，请打开 VPN 后重试。</span>
+        <span id="network-banner-text">暂时无法从 Yahoo Finance 获取汇率数据；请稍后重试。</span>
         <button type="button" id="btn-network-retry" class="ghost-btn">重新检测</button>
       </div>
 
@@ -105,7 +104,6 @@
               <span class="eyebrow">SUBSCRIPTION BUDGET</span>
               <h1>订阅管理 <span class="muted" id="subscriptions-month-label"></span></h1>
             </div>
-            <button type="button" id="btn-add-subscription" class="text-btn">＋ 新增本月订阅</button>
           </div>
           <article class="sheet subscription-sheet">
             <div class="subscription-summary-head">
@@ -114,7 +112,7 @@
             </div>
             <div id="subscription-totals" class="subscription-totals" aria-live="polite"></div>
             <div id="subscription-list" class="subscription-list"></div>
-            <p class="footnote">每个月保存独立快照；月付按当月金额、年付按金额 ÷ 12 计入。修改、取消勾选或删除本月项目不会改动其它月份。</p>
+            <p class="footnote">每个月保存独立快照；“计入默认”决定下个月是否默认计入，“计入当月预算”只决定本月固定预算。月付按当月金额、年付按金额 ÷ 12 计入。</p>
           </article>
         </section>
 
@@ -208,7 +206,7 @@
             <div>
               <span class="eyebrow">FINANCIAL OVERVIEW</span>
               <h1>预算数据面板</h1>
-              <p class="lede">集中查看全年预算、月度汇率、预算变化与个人资产结构。</p>
+              <p class="lede">集中查看全年预算、预算变化与个人资产结构。</p>
             </div>
             <span class="dashboard-badge">数据随预算计算自动更新</span>
           </div>
@@ -294,29 +292,6 @@
               <p id="analysis-empty" class="empty" hidden>还没有可绘制的月份。请先在各月添加行程并更新预算，本页会自动读取已保存结果。</p>
             </article>
           </div>
-          </section>
-
-          <section id="tab-rates" class="dashboard-block">
-            <div class="view-head compact-head">
-              <div>
-                <h1 id="rates-title">汇率走势</h1>
-                <p class="lede">更新预算时自动取得汇率；人民币默认展示离岸人民币兑在岸人民币（CNH/CNY）走势。</p>
-              </div>
-            </div>
-            <div id="rates-empty" class="empty-card rates-empty">
-              <div class="empty-orbit">↗</div>
-              <div class="empty-title">本月还没有计算汇率</div>
-              <p>请先在“预算计算”中添加行程并更新预算，这里会自动展示本次实际使用的汇率趋势。</p>
-            </div>
-            <div id="rates-content" hidden>
-              <div id="rates-charts" class="rates-charts"></div>
-              <article class="sheet">
-                <h2>月度统计</h2>
-                <div id="rates-stats-table" class="row-list"></div>
-              </article>
-              <p id="rates-source-note" class="footnote">汇率随预算计算自动获取。</p>
-              <p class="footnote">周末/节假日无数据日取最近可用值；当月未到日期按本月截至今日的日均汇率估算。仅供预算估算。</p>
-            </div>
           </section>
 
           <section id="tab-assets" class="dashboard-block">
@@ -478,9 +453,9 @@
         <h3>数据管理</h3>
         <button type="button" id="btn-data-close" class="period-btn" title="关闭">✕</button>
       </div>
-      <p class="lede">行程、订阅、资产、预算标准与计算结果保存在项目 data/ 目录。关闭最后一个网页时会自动完整保存；上传时同步应用状态与用户默认标准，汇率缓存按需重新拉取。</p>
+      <p class="lede">行程、订阅、资产、预算标准与计算结果只保存在本机项目 data/ 目录。程序不会自动上传任何用户数据；只有你点击下方按钮并再次确认后，才会同步应用状态与用户默认标准。</p>
       <div id="data-modal-list" class="data-list"></div>
-      <p id="data-upload-status" class="data-upload-status">上传包含 data/app-state.json（含订阅与资产）及 data/defaults.json，不包含 data/rates/；需要预先配置远程仓库和 Git 登录。</p>
+      <p id="data-upload-status" class="data-upload-status">显式确认的上传包含 data/app-state.json（含订阅与资产）及 data/defaults.json，不包含 data/rates/；需要预先配置远程仓库和 Git 登录。</p>
       <div class="modal-foot">
         <button type="button" id="btn-data-clear-all" class="ghost-btn danger">清空全部</button>
         <button type="button" id="btn-data-upload" class="ghost-btn primary">保存并上传预算数据</button>
@@ -509,7 +484,6 @@
   <script src="standards-editor/index.js"></script>
   <script src="standards-view/index.js"></script>
   <script src="calendar/index.js"></script>
-  <script src="rates/index.js"></script>
   <script src="results/index.js"></script>
   <script src="subscriptions/index.js"></script>
   <script src="monthly/index.js"></script>
@@ -520,6 +494,6 @@
   <script src="data/index.js"></script>
   <script src="travel/index.js"></script>
   <script src="shell/index.js"></script>
-  <script src="js/app.js?v=20261102-asset-trailing-rates"></script>
+  <script src="js/app.js?v=20261105-spendee-light"></script>
 </body>
 </html>

@@ -24,6 +24,28 @@ class StateConflictError(Exception):
 
 
 
+SUBSCRIPTION_REGIONS = ("Mainland", "Overseas")
+
+
+
+def _normalize_subscription_applies_to(raw, path: str) -> dict[str, bool]:
+    """规范订阅适用区域；旧数据缺失该字段时兼容为两个区域都适用。"""
+    if raw is None:
+        return {region: True for region in SUBSCRIPTION_REGIONS}
+    if not isinstance(raw, dict) or set(raw) != set(SUBSCRIPTION_REGIONS):
+        raise ValueError(f"{path} 必须同时包含 Mainland 和 Overseas")
+    normalized = {}
+    for region in SUBSCRIPTION_REGIONS:
+        value = raw.get(region)
+        if not isinstance(value, bool):
+            raise ValueError(f"{path}.{region} 必须是布尔值")
+        normalized[region] = value
+    if not any(normalized.values()):
+        raise ValueError(f"{path} 至少选择一个预算区域")
+    return normalized
+
+
+
 def _month_bounds(year: int, month: int) -> tuple[str, str]:
     """返回该月首日 / 月末日（含）的 'YYYY-MM-DD' 字符串。"""
     first = pd.Timestamp(year=year, month=month, day=1)
@@ -119,6 +141,13 @@ class DefaultsPayload(BaseModel):
 
 class DefaultsResetIn(BaseModel):
     base_revision: str = Field(min_length=64, max_length=64)
+
+
+
+class DataUploadRequest(BaseModel):
+    user_confirmed: Literal[True] = Field(
+        description="用户已在本次操作中明确确认上传全部权威用户数据",
+    )
 
 
 

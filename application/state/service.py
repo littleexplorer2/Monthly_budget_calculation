@@ -285,7 +285,7 @@ def _normalize_subscriptions(raw: dict | None) -> dict:
             continue
         if not isinstance(raw_snapshot, dict):
             raise ValueError(f"{path} 必须是对象")
-        unknown = set(raw_snapshot) - {"items"}
+        unknown = set(raw_snapshot) - {"items", "retiredIds"}
         if unknown:
             raise ValueError(f"{path} 包含未知字段：{', '.join(sorted(unknown))}")
         raw_items = raw_snapshot.get("items")
@@ -293,6 +293,19 @@ def _normalize_subscriptions(raw: dict | None) -> dict:
             raise ValueError(f"{path}.items 必须是数组")
         if len(raw_items) > 500:
             raise ValueError(f"{path}.items 最多保存 500 项")
+        raw_retired_ids = raw_snapshot.get("retiredIds", [])
+        if not isinstance(raw_retired_ids, list):
+            raise ValueError(f"{path}.retiredIds 必须是数组")
+        if len(raw_retired_ids) > 500:
+            raise ValueError(f"{path}.retiredIds 最多保存 500 项")
+        retired_ids = []
+        seen_retired_ids = set()
+        for index, raw_id in enumerate(raw_retired_ids):
+            item_id = _state_item_id(raw_id, f"{path}.retiredIds[{index}]")
+            if item_id in seen_retired_ids:
+                raise ValueError(f"{path}.retiredIds[{index}] 重复：{item_id}")
+            seen_retired_ids.add(item_id)
+            retired_ids.append(item_id)
         items = []
         seen_ids = set()
         for index, raw_item in enumerate(raw_items):
@@ -301,7 +314,7 @@ def _normalize_subscriptions(raw: dict | None) -> dict:
                 raise ValueError(f"{item_path} 必须是对象")
             unknown = set(raw_item) - {
                 "id", "name", "currency", "cycle", "amount",
-                "included", "includeByDefault",
+                "included", "includeByDefault", "appliesTo",
             }
             if unknown:
                 raise ValueError(f"{item_path} 包含未知字段：{', '.join(sorted(unknown))}")
@@ -321,6 +334,9 @@ def _normalize_subscriptions(raw: dict | None) -> dict:
                 raise ValueError(f"{item_path}.included 必须是布尔值")
             if not isinstance(include_by_default, bool):
                 raise ValueError(f"{item_path}.includeByDefault 必须是布尔值")
+            applies_to = app_contracts.normalize_subscription_applies_to(
+                raw_item.get("appliesTo"), f"{item_path}.appliesTo",
+            )
             items.append({
                 "id": item_id,
                 "name": _state_text(raw_item.get("name"), f"{item_path}.name"),
@@ -329,8 +345,14 @@ def _normalize_subscriptions(raw: dict | None) -> dict:
                 "amount": _state_amount(raw_item.get("amount"), f"{item_path}.amount"),
                 "included": included,
                 "includeByDefault": include_by_default,
+                "appliesTo": applies_to,
             })
-        out[month] = {"items": items}
+        overlap = seen_ids & seen_retired_ids
+        if overlap:
+            raise ValueError(
+                f"{path}.retiredIds 不能包含仍在 items 中的项目：{sorted(overlap)[0]}"
+            )
+        out[month] = {"items": items, "retiredIds": retired_ids}
     return out
 
 
